@@ -132,11 +132,13 @@ src/PaymentGateway.Api/
 │   ├── SupportedCurrencies.cs            # GBP, EUR, USD; Length = 3
 │   ├── PaymentRequest.cs                 # validated request; Create aggregates all errors;
 │   │                                     #   named limits; masked ToString(); CardNumberLastFour
+│   ├── CreatePaymentRequestResult.cs     # PaymentRequest | non-empty list of ValidationError
 │   ├── ValidationError.cs
 │   ├── PaymentStatus.cs                  # Authorized, Declined
 │   └── Payment.cs                        # recorded entity (safe data only)
 ├── Application/
 │   ├── ProcessPaymentService.cs          # UC1 application service (concrete, no interface)
+│   ├── ProcessPaymentService.Log.cs      # partial: LoggerMessage events 1000–1002
 │   ├── ProcessPaymentCommand.cs          # raw input; masked ToString()
 │   ├── ProcessPaymentResult.cs           # Processed | Rejected | BankFailed(BankFailureKind)
 │   ├── IAcquiringBank.cs                 # driven port (XML-documented)
@@ -153,7 +155,9 @@ src/PaymentGateway.Api/
 └── Http/
     ├── PaymentsController.cs             # POST /api/payments – HTTP translation only (XML-documented)
     ├── PostPaymentRequest.cs             # nullable members; masked ToString() (XML-documented)
-    ├── PaymentResponse.cs            # (XML-documented)
+    ├── PaymentResponse.cs                # the payment representation (XML-documented)
+    ├── PaymentRejectedProblemDetails.cs  # : ValidationProblemDetails + paymentStatus (400)
+    ├── BankFailureProblemDetails.cs      # : ProblemDetails + errorCode (502/503)
     └── PaymentResultMapper.cs            # the single result → HTTP translator (200/400/502/503);
                                           #   unbindable body: Rejected + paymentStatus on the processing
                                           #   action only, logs PaymentRequestUnreadable (1003)
@@ -165,6 +169,8 @@ test/PaymentGateway.Api.Tests/            # the template project, reused
 │   │                                     #   masking, Payment.Create, SupportedCurrencies
 │   ├── Application/                      # ProcessPaymentService outcomes, logs (FakeLogger),
 │   │                                     #   metrics (MetricCollector), ProcessPaymentCommand.ToString
+│   ├── Infrastructure/                   # BankPaymentRequestTests (ToString masking)
+│   ├── Http/                             # PostPaymentRequestTests (ToString masking)
 │   └── Fakes/                            # FakeAcquiringBank (records calls), FakePaymentRepository
 ├── Integration/
 │   ├── ProcessPaymentEndpointTests.cs    # 200/400/502/503 through the real pipeline; traceId in
@@ -174,13 +180,17 @@ test/PaymentGateway.Api.Tests/            # the template project, reused
 │   │                                     #   /api/payments) → ProblemDetails with traceId
 │   ├── CardDataLoggingTests.cs           # card number in a request path or body → in no log entry
 │   │                                     #   (real logging configuration)
-│   ├── AcquiringBankClientTests.cs       # adapter vs WireMock: authorized, declined, 400, 503,
-│   │                                     #   timeout, unreadable body; duration metric
+│   ├── AcquiringBankClientTests.cs       # adapter (resolved from the factory) vs WireMock:
+│   │                                     #   authorized, declined, 400, 503, timeout, refused
+│   │                                     #   (unused port), unreadable body; logs + duration metric
 │   ├── HealthEndpointTests.cs            # GET /health → 200
+│   ├── OpenApiDocumentTests.cs           # Swagger:Enabled flag; response schemas (typed error
+│   │                                     #   bodies) and a description for every request field
 │   ├── StartupValidationTests.cs         # invalid AcquiringBank options fail at startup
 │   └── Fixtures/                         # PaymentGatewayFactory (WebApplicationFactory<Program>,
 │                                         #   FakeLogging, FakeTimeProvider) + WireMock bank fixture
 └── EndToEnd/
+    ├── SimulatorGatewayFactory.cs        # real simulator URL, real clock, real logging
     └── ProcessPaymentJourneyTests.cs     # [Trait("Category","E2E")] vs the real simulator
 ```
 
@@ -220,7 +230,7 @@ The README is rewritten; the template's "Instructions for candidates" are replac
 | 5 | Test strategy | the table above: what each level proves and which risks it covers |
 | 6 | Architecture | Mermaid diagram: `Http` → `Application` → `Domain`, driven ports ← `Infrastructure` adapters, bank simulator; plus the payment flow sequence |
 | 7 | API usage | `POST /api/payments` examples for 200/400/502/503; link to `PaymentGateway.Api.http` and Swagger |
-| 8 | Observability | log events and fields (incl. `PaymentRequestUnreadable`), `traceId` correlation, metrics and `dotnet-counters` command – the `rejected` counter covers requests reaching the service; unreadable bodies appear as `400` on `api/payments` in `http.server.request.duration`; framework log levels kept at `Warning` and why; `/health` |
+| 8 | Observability | log events and fields (incl. `PaymentRequestUnreadable`), `traceId` correlation, metrics and `dotnet-counters` command – the `rejected` counter covers requests reaching the service; unreadable bodies appear as `400` on `api/payments` in `http.server.request.duration` (also the latency percentiles for SC-006 – research R18); framework log levels kept at `Warning` and why; `/health` |
 | 9 | Design Decisions & Assumptions | 200 not 201; Rejected shape (`paymentStatus` only on `POST /api/payments`); every error is `ProblemDetails` with `traceId` (incl. routing errors); 502 vs 503; no retries; expiry rule; supported currencies; amount > 0; single project; TLS upstream; Swagger flag |
 | 10 | Production next steps (not built) | idempotency keys, merchant authentication, persistent storage, PCI DSS scope, circuit breaker, OpenTelemetry exporters |
 
@@ -249,6 +259,21 @@ A final "How this was built" section links to `specs/` and `.specify/memory/cons
   (unknown route, wrong method → `ProblemDetails` with `traceId`); contract "Errors" section and
   `components/responses/RoutingProblem` (research R5; quickstart §5).
 - Constitution Check re-run against 1.0.2 (rows VIII, XI and API Design updated): PASS.
+
+## Revision – `/speckit-analyze` remediation (2026-09-26)
+
+- Tasks: test-first order restored (T013 split; T036 removed – each type is created in the Green
+  step of the first test needing it; path-in-log test before the log-level task), T053 split in
+  three Green steps, E2E factory with real clock and logging, extra-member edge case – see
+  `tasks.md` "Revision".
+- Error bodies are typed – `PaymentRejectedProblemDetails`, `BankFailureProblemDetails` – so the
+  OpenAPI document matches the contract (research R2, R4, R12; data model).
+- SC-006 is verified manually with `curl -w` and read from `http.server.request.duration`
+  (research R18; quickstart §5).
+- Tree updated with `CreatePaymentRequestResult`, `ProcessPaymentService.Log.cs`, the typed error
+  bodies, `test/Unit/Infrastructure/`, `test/Unit/Http/`, `OpenApiDocumentTests.cs` and
+  `SimulatorGatewayFactory.cs`.
+- Constitution Check unchanged: PASS.
 
 ## Complexity Tracking
 

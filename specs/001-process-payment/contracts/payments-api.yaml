@@ -66,7 +66,7 @@ paths:
           content:
             application/problem+json:
               schema:
-                $ref: '#/components/schemas/RejectedProblemDetails'
+                $ref: '#/components/schemas/PaymentRejectedProblemDetails'
               examples:
                 rejected:
                   value:
@@ -237,7 +237,7 @@ components:
             W3C trace id (32 hex characters) of the request; the same value appears in the
             gateway's log entries, so an error can be found in the logs.
           example: 4bf92f3577b34da6a3ce929d0e0e4736
-    RejectedProblemDetails:
+    PaymentRejectedProblemDetails:
       allOf:
         - $ref: '#/components/schemas/ProblemDetails'
         - type: object

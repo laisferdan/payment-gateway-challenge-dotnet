@@ -28,13 +28,17 @@ technology choice constrained by the constitution. Format: Decision / Rationale 
 - **Decision**: **`400 Bad Request`** with an RFC 7807 `ValidationProblemDetails` body:
   `type`, `title` ("Payment rejected"), `status` (400), `errors` (field → messages, camelCase
   field names matching the request), `traceId`, plus the extension member
-  **`paymentStatus: "Rejected"`**.
+  **`paymentStatus: "Rejected"`**. The body is a **typed class**,
+  `Http/PaymentRejectedProblemDetails : ValidationProblemDetails` with a `PaymentStatus` property
+  fixed to `"Rejected"`; `PaymentResultMapper` returns it and `[ProducesResponseType]` declares it
+  for `400`, so the generated OpenAPI schema carries `paymentStatus` exactly as the contract.
 - **Rationale**: the merchant supplied invalid information – a client error. The constitution
   (Principle IX) mandates `ProblemDetails`; the extension member makes the assessment's
   `Rejected` status explicit without clashing with the RFC's numeric `status` member.
 - **Alternatives**: `422 Unprocessable Entity` (valid, but ASP.NET Core and most merchants
   expect 400 for validation); a custom `{ status, errors }` body (violates Principle IX's
-  consistent error shape).
+  consistent error shape); a plain `ValidationProblemDetails` with an `Extensions["paymentStatus"]`
+  entry (works at runtime, but the OpenAPI document cannot show the member – analysis F1).
 
 ## R3. Malformed or unbindable request body (FR-013)
 
@@ -84,8 +88,12 @@ technology choice constrained by the constitution. Format: Decision / Rationale 
   | any other status, or a body that fails the shape check (R6) | Bank error | `502 Bad Gateway`, `errorCode: "bank_error"` |
 
   Both are `ProblemDetails` bodies with a stable `type` URI, a merchant-readable `title` and
-  `detail`, `traceId`, and the `errorCode` extension member. No `paymentStatus` member is
-  present: a bank failure is not a payment status (Clarifications, FR-002).
+  `detail`, `traceId`, and the `errorCode` member. No `paymentStatus` member is
+  present: a bank failure is not a payment status (Clarifications, FR-002). The body is a **typed
+  class**, `Http/BankFailureProblemDetails : ProblemDetails` with an `ErrorCode` property
+  (`bank_unavailable` | `bank_error`), returned by `PaymentResultMapper` and declared with
+  `[ProducesResponseType]` for `502` and `503`, so the OpenAPI document shows `errorCode`
+  (analysis F1).
 - **Rationale**: `503` tells the merchant "try again later"; `502` tells them "an upstream
   party answered badly – retrying the same request will not help", which is exactly the
   distinction the clarification asked for. Timeouts are folded into *unavailable* to keep two
@@ -239,7 +247,12 @@ technology choice constrained by the constitution. Format: Decision / Rationale 
     project also sets `GenerateDocumentationFile` (it feeds OpenAPI) with `NoWarn` `CS1591`;
     XML docs are written on controllers, DTOs and driven ports (Principle X).
   - Swashbuckle includes the Api XML comment file; the action declares every status code with
-    `[ProducesResponseType]` (FR-022).
+    `[ProducesResponseType]` and the typed body for each (`PaymentResponse`,
+    `PaymentRejectedProblemDetails`, `BankFailureProblemDetails`, `ProblemDetails`) (FR-022).
+  - Field constraints (Constitution X): the rules live in `Domain/`, and DataAnnotations on the
+    HTTP DTO would validate in `Http/` (Principle II), so each `PostPaymentRequest` property's XML
+    comment states its rule in words. This repetition is deliberate and recorded in the README's
+    design decisions; `OpenApiDocumentTests` asserts every field has a description.
   - Coverage is collected with `coverlet.collector` (`--collect:"XPlat Code Coverage"`) and
     reported as Cobertura XML – **no threshold** (Principle V). E2E tests are excluded from the
     default run with `--filter "Category!=E2E"`.
@@ -440,3 +453,19 @@ report needed – R12).
   and stay out of CI's default run.
 - **Alternatives**: running E2E in CI with `docker compose up` (slower and more fragile; can be
   added later); a coverage threshold (not required by the constitution – R12).
+
+## R18. Verifying the latency criterion (SC-006)
+
+- **Decision**: **no automated performance test**. SC-006 ("95 % of outcomes in under 2 s when
+  the bank answers promptly; Rejected in under 1 s") is verified **manually** with
+  `curl -w "%{time_total}"` against the running gateway (quickstart §5) as part of the Definition
+  of Done (tasks T084). In a running system the percentiles are read from the built-in ASP.NET
+  Core histogram `http.server.request.duration` (meter `Microsoft.AspNetCore.Hosting`, tagged by
+  `http.route` and `http.response.status_code`), viewable with `dotnet-counters`; the README's
+  observability section says so.
+- **Rationale**: the gateway adds an in-memory validation and one HTTP call; latency is dominated
+  by the bank, which the simulator answers in milliseconds. A load-test harness (tooling,
+  thresholds, flaky timings in CI) would be over-engineering for this exercise (Principle VII),
+  while the built-in histogram already gives production percentiles without new code.
+- **Alternatives**: a load test with NBomber/k6 (new dependency and CI job); a timing assertion in
+  integration tests (non-deterministic – Principle V).

@@ -44,7 +44,8 @@ Depends on nothing but the BCL.
 | `MinAmount` | 1 | FR-008 |
 
 **Factory**: `Create(cardNumber?, expiryMonth?, expiryYear?, currency?, amount?, cvv?, today)`
-→ `Result` holding either a `PaymentRequest` or a non-empty list of `ValidationError`.
+→ **`CreatePaymentRequestResult`** (`Domain/CreatePaymentRequestResult.cs`) holding either a
+`PaymentRequest` or a non-empty `IReadOnlyList<ValidationError>`.
 
 - Every field is checked; **all** failures are returned together (FR-011).
 - No value is trimmed, padded, case-converted or defaulted (FR-010).
@@ -200,16 +201,22 @@ Controllers and DTOs are XML-documented (they feed OpenAPI).
 - **PaymentsController**: `POST /api/payments`; depends on `ProcessPaymentService` and
   `PaymentResultMapper`.
 - **PostPaymentRequest**: nullable members mirroring `ProcessPaymentCommand`; `ToString()`
-  overridden to mask card number and CVV.
+  overridden to mask card number and CVV; each property's XML comment states its validation rule
+  so the OpenAPI document shows the field constraints (research R12).
 - **PaymentResponse**: `id`, `status` (`Authorized`|`Declined`), `cardNumberLastFour`,
   `expiryMonth`, `expiryYear`, `currency`, `amount`. The single merchant-facing representation of
   a payment – returned by processing and, from UC2, by retrieval.
+- **PaymentRejectedProblemDetails** `: ValidationProblemDetails` – adds `paymentStatus`
+  (always `"Rejected"`); the body of every `400` of `POST /api/payments` (research R2).
+- **BankFailureProblemDetails** `: ProblemDetails` – adds `errorCode` (`bank_unavailable` |
+  `bank_error`); the body of `503` / `502` (research R4).
 - **PaymentResultMapper**: the single place translating `ProcessPaymentResult` into
-  `200` / `400` / `502` / `503` (research R1, R4, R5). It also builds the response for
+  `200` `PaymentResponse` / `400` `PaymentRejectedProblemDetails` / `502`–`503`
+  `BankFailureProblemDetails` (research R1, R2, R4, R5). It also builds the response for
   unbindable payloads (used by `InvalidModelStateResponseFactory`, research R3):
   - failing action = the payment-processing action (identified by
-    `ControllerActionDescriptor.MethodInfo.Name`) → the Rejected body **with**
-    `paymentStatus: "Rejected"`, and one `PaymentRequestUnreadable` log entry;
+    `ControllerActionDescriptor.MethodInfo.Name`) → `PaymentRejectedProblemDetails` (**with**
+    `paymentStatus: "Rejected"`), and one `PaymentRequestUnreadable` log entry;
   - any other action → a plain `ValidationProblemDetails` with `traceId`, **no**
     `paymentStatus`.
 

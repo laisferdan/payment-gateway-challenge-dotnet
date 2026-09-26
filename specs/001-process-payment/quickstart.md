@@ -96,6 +96,20 @@ curl -i -X POST "{{base}}/api/payments" -H "Content-Type: application/json" -d '
 }'
 ```
 
+**Latency (SC-006, research R18 – manual check, no automated test)**:
+
+```bash
+# valid payment – expected < 2 s
+curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" -X POST "{{base}}/api/payments" \
+  -H "Content-Type: application/json" \
+  -d '{"cardNumber":"2222405343248877","expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":1050,"cvv":"123"}'
+# Rejected – expected < 1 s
+curl -s -o /dev/null -w "%{http_code} %{time_total}s\n" -X POST "{{base}}/api/payments" \
+  -H "Content-Type: application/json" -d '{"cardNumber":"1234"}'
+```
+
+Percentiles for a running gateway: `http.server.request.duration` (section 6).
+
 **Check in every response and in the console logs**: the full card number and the CVV never
 appear (FR-020) – also for scenario 6 with the card number in the unreadable body, and for
 scenario 11. There is no "Request starting …" line, because `Microsoft.AspNetCore` and
