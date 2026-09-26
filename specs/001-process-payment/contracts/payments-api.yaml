@@ -1,0 +1,265 @@
+openapi: 3.0.3
+info:
+  title: Payment Gateway API
+  version: 1.0.0
+  description: |
+    Lets a merchant process a card payment (UC1). The full card number and CVV are never
+    returned; only the last four card digits are exposed.
+
+    **Errors.** Every error response of the service is an RFC 7807 `ProblemDetails`
+    (`application/problem+json`) carrying `traceId` – the id that also appears in the gateway's
+    log entries. This includes errors produced by routing itself, which have no operation of
+    their own in this document (see `components/responses/RoutingProblem`):
+    `404 Not Found` for an unknown route and `405 Method Not Allowed` for a method a route does
+    not support (e.g. `PUT /api/payments`). The member `paymentStatus: "Rejected"` appears
+    **only** on `400` responses of `POST /api/payments`; a `400` from any other endpoint is a
+    plain `ProblemDetails` without it.
+paths:
+  /api/payments:
+    post:
+      operationId: ProcessPayment
+      summary: Process a card payment
+      description: >
+        Validates the request and, when valid, forwards it once to the acquiring bank.
+        Authorized and Declined payments are recorded and can be retrieved by id (UC2).
+        Invalid requests are Rejected without calling the bank.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PostPaymentRequest'
+            examples:
+              authorized:
+                summary: Card ending in an odd digit (simulator authorizes)
+                value:
+                  cardNumber: "2222405343248877"
+                  expiryMonth: 4
+                  expiryYear: 2027
+                  currency: GBP
+                  amount: 100
+                  cvv: "123"
+      responses:
+        '200':
+          description: >
+            The bank decided – the payment was recorded and `status` is Authorized or Declined.
+            Use `id` to retrieve the payment later.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+              examples:
+                authorized:
+                  value:
+                    id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                    status: Authorized
+                    cardNumberLastFour: "8877"
+                    expiryMonth: 4
+                    expiryYear: 2027
+                    currency: GBP
+                    amount: 100
+        '400':
+          description: >
+            Rejected – invalid information was supplied (or the body could not be read).
+            The bank was not called and no payment was recorded. All invalid fields are listed.
+            This is the only response of the API that carries `paymentStatus: "Rejected"`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/RejectedProblemDetails'
+              examples:
+                rejected:
+                  value:
+                    type: https://tools.ietf.org/html/rfc9110#section-15.5.1
+                    title: Payment rejected
+                    status: 400
+                    paymentStatus: Rejected
+                    errors:
+                      cardNumber: ["Card number must be 14 to 19 characters long."]
+                      currency: ["Currency must be one of: GBP, EUR, USD."]
+        '502':
+          description: Bank error – the bank refused the request or answered unreadably. Nothing was recorded; retrying will not help.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BankFailureProblemDetails'
+              examples:
+                bankError:
+                  value:
+                    type: https://tools.ietf.org/html/rfc9110#section-15.6.3
+                    title: Payment could not be processed
+                    status: 502
+                    detail: The acquiring bank returned an error.
+                    errorCode: bank_error
+        '503':
+          description: Bank unavailable – the bank is unavailable or did not answer in time. Nothing was recorded; the merchant may try again later.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/BankFailureProblemDetails'
+              examples:
+                bankUnavailable:
+                  value:
+                    type: https://tools.ietf.org/html/rfc9110#section-15.6.4
+                    title: Payment could not be processed
+                    status: 503
+                    detail: The acquiring bank is unavailable. Try again later.
+                    errorCode: bank_unavailable
+        '500':
+          description: Unexpected error. No details are disclosed.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+  /health:
+    get:
+      operationId: Health
+      summary: Liveness probe (operational, not part of the merchant contract)
+      description: >
+        Returns 200 while the gateway process is up and serving requests. The acquiring bank is
+        not checked; bank availability is reported per payment (503) and in metrics.
+      tags: [Operations]
+      responses:
+        '200':
+          description: The gateway is alive.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Healthy
+        '503':
+          description: The gateway is unhealthy.
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Unhealthy
+components:
+  responses:
+    RoutingProblem:
+      description: >
+        Produced by routing, not by an operation: `404 Not Found` for an unknown route, or
+        `405 Method Not Allowed` for a method the route does not support (e.g. `GET` or `PUT` on
+        `/api/payments`). Returned as `ProblemDetails` with `traceId` (`UseStatusCodePages`).
+        Never carries `paymentStatus`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+          examples:
+            methodNotAllowed:
+              value:
+                type: https://tools.ietf.org/html/rfc9110#section-15.5.6
+                title: Method Not Allowed
+                status: 405
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+            unknownRoute:
+              value:
+                type: https://tools.ietf.org/html/rfc9110#section-15.5.5
+                title: Not Found
+                status: 404
+                traceId: 4bf92f3577b34da6a3ce929d0e0e4736
+  schemas:
+    PostPaymentRequest:
+      type: object
+      description: >
+        All fields are required. Values are never trimmed, padded or case-converted. A missing
+        field is Rejected (400) and listed in `errors`.
+      required: [cardNumber, expiryMonth, expiryYear, currency, amount, cvv]
+      properties:
+        cardNumber:
+          type: string
+          description: 14–19 numeric characters.
+          pattern: '^[0-9]{14,19}$'
+        expiryMonth:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 12
+        expiryYear:
+          type: integer
+          format: int32
+          maximum: 9999
+          description: >
+            Full year, at most 9999. Month + year must not be before the current month (UTC).
+            Out-of-range years are Rejected (400).
+        currency:
+          type: string
+          description: Uppercase ISO 4217 code.
+          enum: [GBP, EUR, USD]
+        amount:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Amount in the minor currency unit (USD $10.50 = 1050).
+        cvv:
+          type: string
+          description: 3–4 numeric characters.
+          pattern: '^[0-9]{3,4}$'
+    PaymentResponse:
+      type: object
+      required: [id, status, cardNumberLastFour, expiryMonth, expiryYear, currency, amount]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [Authorized, Declined]
+        cardNumberLastFour:
+          type: string
+          pattern: '^[0-9]{4}$'
+        expiryMonth:
+          type: integer
+          format: int32
+        expiryYear:
+          type: integer
+          format: int32
+        currency:
+          type: string
+        amount:
+          type: integer
+          format: int32
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        traceId:
+          type: string
+          description: >
+            W3C trace id (32 hex characters) of the request; the same value appears in the
+            gateway's log entries, so an error can be found in the logs.
+          example: 4bf92f3577b34da6a3ce929d0e0e4736
+    RejectedProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          required: [paymentStatus, errors]
+          properties:
+            paymentStatus:
+              type: string
+              enum: [Rejected]
+              description: Present only on 400 responses of POST /api/payments.
+            errors:
+              type: object
+              description: Field name (camelCase) → messages. Never echoes card number or CVV.
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+    BankFailureProblemDetails:
+      allOf:
+        - $ref: '#/components/schemas/ProblemDetails'
+        - type: object
+          required: [errorCode]
+          properties:
+            errorCode:
+              type: string
+              enum: [bank_unavailable, bank_error]
