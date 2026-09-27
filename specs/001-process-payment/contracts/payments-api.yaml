@@ -75,7 +75,7 @@ paths:
                     status: 400
                     paymentStatus: Rejected
                     errors:
-                      cardNumber: ["Card number must be 14 to 19 characters long."]
+                      cardNumber: ["Card number must be a string of 14 to 19 digits (0-9)."]
                       currency: ["Currency must be one of: GBP, EUR, USD."]
         '502':
           description: Bank error – the bank refused the request or answered unreadably. Nothing was recorded; retrying will not help.
