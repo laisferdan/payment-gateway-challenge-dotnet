@@ -157,7 +157,7 @@ command ──► PaymentRequest.Create(…, today from TimeProvider)
 | 1000 | `PaymentProcessed` | Information | `paymentId`, `status`, `currency`, `amount` |
 | 1001 | `PaymentRejected` | Information | `invalidFields` (names only) |
 | 1002 | `PaymentBankFailed` | Warning | `failureKind`, `currency`, `amount` |
-| 1003 | `PaymentRequestUnreadable` | Information | `invalidFields` (binding paths only, e.g. `$.amount`) – written by `UnreadableRequestHandler` for an unbindable `POST` body (research R3) |
+| 1003 | `PaymentRequestUnreadable` | Information | `invalidFields` (binding paths only, e.g. `$.amount`) – written by `PaymentResultMapper.ToUnreadableBodyResult` for an unbindable `POST` body to the processing action (research R3) |
 | 2000 | `BankCallCompleted` | Information | `durationMs`, `outcome` |
 | 2001 | `BankCallFailed` | Warning | `durationMs`, `failureKind`, `httpStatusCode?` |
 
@@ -219,12 +219,13 @@ Controllers and DTOs are XML-documented (they feed OpenAPI).
   `200` `PaymentResponse` / `400` `PaymentRejectedProblemDetails` / `502`–`503`
   `BankFailureProblemDetails` (research R1, R2, R4, R5). It builds every response body,
   including the plain invalid-request `ValidationProblemDetails`.
-- **UnreadableRequestHandler**: the `InvalidModelStateResponseFactory` for unbindable payloads
-  (research R3). It turns the `ModelState` into field errors with fixed messages (never the
-  submitted values) and picks the response, which `PaymentResultMapper` builds:
+  `ToUnreadableBodyResult` is also the `InvalidModelStateResponseFactory` for unbindable
+  payloads (research R3): it turns the `ModelState` into field errors with fixed messages
+  (never the submitted values) and is action-aware:
   - failing action = the payment-processing action (identified by
     `ControllerActionDescriptor.MethodInfo.Name`) → `PaymentRejectedProblemDetails` (**with**
-    `paymentStatus: "Rejected"`), and one `PaymentRequestUnreadable` log entry;
+    `paymentStatus: "Rejected"`), and one `PaymentRequestUnreadable` log entry (via
+    `PaymentResultMapper.Log.cs`);
   - any other action → a plain `ValidationProblemDetails` with `traceId`, **no**
     `paymentStatus`.
 

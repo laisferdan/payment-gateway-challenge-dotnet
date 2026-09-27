@@ -47,7 +47,7 @@ technology choice constrained by the constitution. Format: Decision / Rationale 
   the core and are reported by the domain rules. Values the JSON serializer cannot bind (text
   for a number, a number for a string, amount beyond `int` range, invalid JSON) are rejected by
   ASP.NET Core model binding; `ApiBehaviorOptions.InvalidModelStateResponseFactory` calls
-  `Http/UnreadableRequestHandler`, which has `PaymentResultMapper` produce the **same**
+  `PaymentResultMapper.ToUnreadableBodyResult`, which produces the **same**
   `ValidationProblemDetails` shape as R2,
   including `paymentStatus: "Rejected"`. The bank is never called in either case.
 - **`paymentStatus` only on `POST /api/payments`** (Constitution 1.0.2, API Design): the factory
@@ -60,8 +60,8 @@ technology choice constrained by the constitution. Format: Decision / Rationale 
   (UC2 uses this for a malformed payment id).
 - **Logging an unreadable body**: the processing action never runs, so `ProcessPaymentService`
   cannot log it. When the factory builds the Rejected response for an unbindable payload it
-  writes **one** log entry, `PaymentRequestUnreadable` (R15), through the `ILogger` of
-  `UnreadableRequestHandler`: the invalid field **paths** only (e.g. `$.amount`), never body content,
+  writes **one** log entry, `PaymentRequestUnreadable` (R15), through the `ILogger` injected into
+  `PaymentResultMapper`: the invalid field **paths** only (e.g. `$.amount`), never body content,
   with `TraceId` from the request scope. It is **not** counted in the `PaymentGateway` meter –
   the `rejected` counter covers requests that reached `ProcessPaymentService` (R15); unreadable
   bodies are visible as `400` on the `api/payments` route in the built-in
@@ -325,7 +325,7 @@ report needed – R12).
     | 1000 | `PaymentProcessed` | Information | `paymentId`, `status` (Authorized/Declined), `currency`, `amount` | `ProcessPaymentService` |
     | 1001 | `PaymentRejected` | Information | `invalidFields` (field **names** only, e.g. `cardNumber,currency`) | `ProcessPaymentService` |
     | 1002 | `PaymentBankFailed` | Warning | `failureKind` (Unavailable/Error), `currency`, `amount` | `ProcessPaymentService` |
-    | 1003 | `PaymentRequestUnreadable` | Information | `invalidFields` (binding **paths** only, e.g. `$.amount`; never body content) | `Http/UnreadableRequestHandler`, when the invalid-model factory builds the Rejected response for `POST /api/payments` (R3) |
+    | 1003 | `PaymentRequestUnreadable` | Information | `invalidFields` (binding **paths** only, e.g. `$.amount`; never body content) | `PaymentResultMapper.ToUnreadableBodyResult`, when the invalid-model factory builds the Rejected response for `POST /api/payments` (R3) |
     | 2000 | `BankCallCompleted` | Information | `durationMs`, `outcome` (authorized/declined) | `AcquiringBankClient` |
     | 2001 | `BankCallFailed` | Warning | `durationMs`, `failureKind`, `httpStatusCode` (nullable) | `AcquiringBankClient` |
 

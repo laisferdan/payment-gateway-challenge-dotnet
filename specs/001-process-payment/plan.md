@@ -117,7 +117,7 @@ src/PaymentGateway.Api/
 ├── Program.cs                            # the only composition root: controllers + JSON options,
 │                                         #   AddProblemDetails (traceId) + UseExceptionHandler +
 │                                         #   UseStatusCodePages (routing 404/405 as ProblemDetails),
-│                                         #   InvalidModelStateResponseFactory → UnreadableRequestHandler
+│                                         #   InvalidModelStateResponseFactory → PaymentResultMapper
 │                                         #   (paymentStatus only for the processing action),
 │                                         #   no HttpLogging / W3C logging,
 │                                         #   typed HttpClient + AcquiringBankOptions (ValidateOnStart),
@@ -161,11 +161,12 @@ src/PaymentGateway.Api/
     ├── PaymentRejectedProblemDetails.cs  # : ValidationProblemDetails + paymentStatus (400)
     ├── BankFailureProblemDetails.cs      # : ProblemDetails + errorCode (502/503)
     ├── PaymentResultMapper.cs            # the single result → HTTP translator (200/400/502/503);
-    │                                     #   builds every Rejected / bank-failure / invalid-request body
-    ├── UnreadableRequestHandler.cs       # unbindable body (InvalidModelStateResponseFactory): fixed
-    │                                     #   messages; Rejected + paymentStatus on the processing action
-    │                                     #   only, via PaymentResultMapper
-    └── UnreadableRequestHandler.Log.cs   # partial: LoggerMessage event 1003 PaymentRequestUnreadable
+    │                                     #   builds every Rejected / bank-failure / invalid-request body;
+    │                                     #   the unbindable-body branch (InvalidModelStateResponseFactory)
+    │                                     #   is action-aware: fixed messages; Rejected + paymentStatus on
+    │                                     #   the processing action only, plain ValidationProblemDetails
+    │                                     #   otherwise
+    └── PaymentResultMapper.Log.cs        # partial: LoggerMessage event 1003 PaymentRequestUnreadable
 
 test/PaymentGateway.Api.Tests/            # the template project, reused
 ├── PaymentGateway.Api.Tests.csproj       # Nullable, ImplicitUsings, TreatWarningsAsErrors; packages per R13
