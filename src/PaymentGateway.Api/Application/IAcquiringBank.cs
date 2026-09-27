@@ -2,6 +2,9 @@ using PaymentGateway.Api.Domain;
 
 namespace PaymentGateway.Api.Application;
 
+/// <summary>
+/// Driven port to the acquiring bank that authorizes or declines a payment request.
+/// </summary>
 public interface IAcquiringBank
 {
     /// <summary>
