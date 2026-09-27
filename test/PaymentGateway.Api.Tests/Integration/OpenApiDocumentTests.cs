@@ -5,7 +5,6 @@ using PaymentGateway.Api.Tests.Integration.Fixtures;
 
 namespace PaymentGateway.Api.Tests.Integration;
 
-/// <summary>The published API documentation (Constitution X) and the Swagger flag (Constitution XII).</summary>
 public class OpenApiDocumentTests : IClassFixture<WireMockBankFixture>
 {
     private const string DocumentPath = "/swagger/v1/swagger.json";
@@ -26,7 +25,7 @@ public class OpenApiDocumentTests : IClassFixture<WireMockBankFixture>
     [Fact]
     public async Task SwaggerDocument_WhenSwaggerIsEnabled_IsServed()
     {
-        // Arrange – Production environment, flag on.
+        // Arrange
         using PaymentGatewayFactory factory = new(_bank.Url, SwaggerEnabled);
         using HttpClient client = factory.CreateClient();
 
@@ -40,7 +39,7 @@ public class OpenApiDocumentTests : IClassFixture<WireMockBankFixture>
     [Fact]
     public async Task SwaggerDocument_ByDefault_IsNotServed()
     {
-        // Arrange – no flag.
+        // Arrange
         using PaymentGatewayFactory factory = new(_bank.Url);
         using HttpClient client = factory.CreateClient();
 

@@ -1,11 +1,13 @@
 namespace PaymentGateway.Api.Domain;
 
 /// <summary>
-/// The acquiring bank's decision on a payment. <c>Rejected</c> is not a member: a rejected request
-/// never becomes a payment.
+/// The status of a payment. <c>Authorized</c> and <c>Declined</c> are the acquiring bank's decision;
+/// <c>Rejected</c> means the gateway refused invalid information, so the bank was never called and
+/// no payment was recorded.
 /// </summary>
 public enum PaymentStatus
 {
     Authorized,
     Declined,
+    Rejected,
 }

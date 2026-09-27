@@ -16,7 +16,7 @@ public class SupportedCurrenciesTests
     [InlineData("", false)]
     public void IsSupported_ForCode_ReturnsWhetherItIsInTheOrdinalList(string code, bool expected)
     {
-        // Arrange – no setup: the list is fixed.
+        // Arrange
 
         // Act
         bool supported = SupportedCurrencies.IsSupported(code);
@@ -28,7 +28,7 @@ public class SupportedCurrenciesTests
     [Fact]
     public void Length_Always_IsThree()
     {
-        // Arrange – no setup: the length is a constant.
+        // Arrange
 
         // Act
         int length = SupportedCurrencies.Length;

@@ -4,10 +4,6 @@ using System.Text.Json;
 
 namespace PaymentGateway.Api.Tests.EndToEnd;
 
-/// <summary>
-/// Merchant journeys against the real bank simulator. Excluded from the default run:
-/// <c>docker compose up -d bank_simulator</c> then <c>dotnet test --filter "Category=E2E"</c>.
-/// </summary>
 [Trait("Category", "E2E")]
 public class ProcessPaymentJourneyTests : IClassFixture<SimulatorGatewayFactory>
 {
@@ -23,7 +19,7 @@ public class ProcessPaymentJourneyTests : IClassFixture<SimulatorGatewayFactory>
     [InlineData("2222405343248878", "Declined")]
     public async Task ProcessPayment_WhenSimulatorDecides_Returns200WithItsDecision(string cardNumber, string expectedStatus)
     {
-        // Arrange – the simulator authorizes cards ending in an odd digit and declines even ones.
+        // Arrange
         using HttpClient client = _factory.CreateClient();
 
         // Act
@@ -39,7 +35,7 @@ public class ProcessPaymentJourneyTests : IClassFixture<SimulatorGatewayFactory>
     [Fact]
     public async Task ProcessPayment_WhenSimulatorIsUnavailable_Returns503BankUnavailable()
     {
-        // Arrange – the simulator answers 503 for cards ending in 0.
+        // Arrange
         using HttpClient client = _factory.CreateClient();
 
         // Act

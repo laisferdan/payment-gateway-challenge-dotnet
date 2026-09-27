@@ -4,10 +4,6 @@ using Microsoft.Extensions.Configuration;
 
 namespace PaymentGateway.Api.Tests.EndToEnd;
 
-/// <summary>
-/// The gateway in-process against the real bank simulator (<c>docker compose up -d bank_simulator</c>),
-/// with the real clock and the real logging – nothing is faked.
-/// </summary>
 public sealed class SimulatorGatewayFactory : WebApplicationFactory<Program>
 {
     public const string SimulatorUrl = "http://localhost:8080";

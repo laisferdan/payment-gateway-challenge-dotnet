@@ -206,6 +206,7 @@ components:
         status:
           type: string
           enum: [Authorized, Declined]
+          description: A recorded payment is only ever Authorized or Declined.
         cardNumberLastFour:
           type: string
           pattern: '^[0-9]{4}$'

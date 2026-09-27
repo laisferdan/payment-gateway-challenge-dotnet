@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 
+using PaymentGateway.Api.Domain;
+
 namespace PaymentGateway.Api.Http;
 
 /// <summary>
@@ -8,13 +10,11 @@ namespace PaymentGateway.Api.Http;
 /// </summary>
 public sealed class PaymentRejectedProblemDetails : ValidationProblemDetails
 {
-    public const string RejectedStatus = "Rejected";
-
     public PaymentRejectedProblemDetails(IDictionary<string, string[]> errors)
         : base(errors)
     {
     }
 
-    /// <summary>Always <c>Rejected</c> – the assessment's third payment outcome.</summary>
-    public string PaymentStatus { get; } = RejectedStatus;
+    /// <summary>Always <c>Rejected</c>.</summary>
+    public PaymentStatus PaymentStatus { get; } = PaymentStatus.Rejected;
 }

@@ -139,7 +139,6 @@ public sealed class PaymentRequest
             && value.All(char.IsAsciiDigit);
     }
 
-    /// <summary>Request field names as the merchant sends them.</summary>
     public static class Fields
     {
         public const string CardNumber = "cardNumber";

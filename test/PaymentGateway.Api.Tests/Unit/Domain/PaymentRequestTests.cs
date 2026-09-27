@@ -16,7 +16,7 @@ public class PaymentRequestTests
     [Fact]
     public void Create_WhenAllFieldsAreValid_ReturnsRequest()
     {
-        // Arrange – the valid values above.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = PaymentRequest.Create(
@@ -53,7 +53,7 @@ public class PaymentRequestTests
     [InlineData("2222405343248877123")]
     public void Create_WhenCardNumberIsWithinBounds_Accepts(string cardNumber)
     {
-        // Arrange – 14 and 19 digits.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(cardNumber: cardNumber);
@@ -73,7 +73,7 @@ public class PaymentRequestTests
     [InlineData("٢٢٢٢٤٠٥٣٤٣٢٤٨٨٧٧")]
     public void Create_WhenCardNumberIsInvalid_RejectsCardNumberWithoutEchoingIt(string? cardNumber)
     {
-        // Arrange – 13 and 20 digits, missing, empty, separators, a letter, non-ASCII digits.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(cardNumber: cardNumber);
@@ -87,7 +87,7 @@ public class PaymentRequestTests
     [InlineData(12)]
     public void Create_WhenExpiryMonthIsWithinBounds_Accepts(int expiryMonth)
     {
-        // Arrange – the year is far enough ahead for any month.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(expiryMonth: expiryMonth);
@@ -102,7 +102,7 @@ public class PaymentRequestTests
     [InlineData(null)]
     public void Create_WhenExpiryMonthIsInvalid_RejectsExpiryMonth(int? expiryMonth)
     {
-        // Arrange – below 1, above 12, missing.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(expiryMonth: expiryMonth);
@@ -116,7 +116,7 @@ public class PaymentRequestTests
     [InlineData(12, 9999)]
     public void Create_WhenExpiryIsCurrentMonthOrLater_Accepts(int expiryMonth, int expiryYear)
     {
-        // Arrange – today is 2026-09-26: the current month is still valid; 9999 is the last year.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(expiryMonth: expiryMonth, expiryYear: expiryYear);
@@ -132,7 +132,7 @@ public class PaymentRequestTests
     [InlineData(null)]
     public void Create_WhenExpiryYearIsInvalid_RejectsExpiryYear(int? expiryYear)
     {
-        // Arrange – last year, a two-digit year, beyond 9999, missing.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(expiryYear: expiryYear);
@@ -144,7 +144,7 @@ public class PaymentRequestTests
     [Fact]
     public void Create_WhenExpiryIsLastMonth_RejectsExpiryYear()
     {
-        // Arrange – 08/2026 on 2026-09-26: each part is valid, the combination is in the past.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(expiryMonth: 8, expiryYear: 2026);
@@ -156,7 +156,7 @@ public class PaymentRequestTests
     [Fact]
     public void Create_WhenMonthAndYearAreBothInvalid_DoesNotAddCombinationError()
     {
-        // Arrange – month 13 and a past year.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(expiryMonth: 13, expiryYear: 2020);
@@ -171,7 +171,7 @@ public class PaymentRequestTests
     [InlineData("USD")]
     public void Create_WhenCurrencyIsSupported_Accepts(string currency)
     {
-        // Arrange – the three supported codes.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(currency: currency);
@@ -188,7 +188,7 @@ public class PaymentRequestTests
     [InlineData("")]
     public void Create_WhenCurrencyIsInvalid_RejectsCurrencyListingSupportedCodes(string? currency)
     {
-        // Arrange – lowercase, too short, unsupported, missing, empty.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(currency: currency);
@@ -203,7 +203,7 @@ public class PaymentRequestTests
     [InlineData(int.MaxValue)]
     public void Create_WhenAmountIsPositive_Accepts(int amount)
     {
-        // Arrange – the smallest amount and the largest representable one.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(amount: amount);
@@ -218,7 +218,7 @@ public class PaymentRequestTests
     [InlineData(null)]
     public void Create_WhenAmountIsInvalid_RejectsAmount(int? amount)
     {
-        // Arrange – negative, zero, missing.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(amount: amount);
@@ -232,7 +232,7 @@ public class PaymentRequestTests
     [InlineData("0123")]
     public void Create_WhenCvvIsWithinBounds_AcceptsAndKeepsLeadingZeros(string cvv)
     {
-        // Arrange – 3 and 4 digits, one with a leading zero.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(cvv: cvv);
@@ -249,7 +249,7 @@ public class PaymentRequestTests
     [InlineData("")]
     public void Create_WhenCvvIsInvalid_RejectsCvvWithoutEchoingIt(string? cvv)
     {
-        // Arrange – 2 and 5 digits, a letter, missing, empty.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(cvv: cvv);
@@ -261,7 +261,7 @@ public class PaymentRequestTests
     [Fact]
     public void Create_WhenSeveralFieldsAreInvalid_ReturnsEveryError()
     {
-        // Arrange – card number, currency and amount all invalid.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(cardNumber: "1234", currency: "gbp", amount: 0);
@@ -276,7 +276,7 @@ public class PaymentRequestTests
     [InlineData(ValidCardNumber, ValidCurrency, " " + ValidCvv, "cvv")]
     public void Create_WhenValueNeedsTrimming_IsRejected(string cardNumber, string currency, string cvv, string field)
     {
-        // Arrange – one value with surrounding whitespace: it is not trimmed into validity.
+        // Arrange
 
         // Act
         CreatePaymentRequestResult result = CreateWith(cardNumber: cardNumber, currency: currency, cvv: cvv);

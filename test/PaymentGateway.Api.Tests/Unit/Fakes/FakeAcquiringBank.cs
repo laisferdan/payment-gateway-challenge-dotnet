@@ -3,7 +3,6 @@ using PaymentGateway.Api.Domain;
 
 namespace PaymentGateway.Api.Tests.Unit.Fakes;
 
-/// <summary>Answers with a configured result and records how it was called.</summary>
 public sealed class FakeAcquiringBank : IAcquiringBank
 {
     private readonly BankAuthorizationResult _result;

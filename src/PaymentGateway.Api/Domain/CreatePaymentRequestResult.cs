@@ -1,8 +1,5 @@
 namespace PaymentGateway.Api.Domain;
 
-/// <summary>
-/// The outcome of validating a payment request: either the valid request or every rule it broke.
-/// </summary>
 public sealed class CreatePaymentRequestResult
 {
     private CreatePaymentRequestResult(PaymentRequest? request, IReadOnlyList<ValidationError> errors)

@@ -27,13 +27,11 @@ public sealed class PaymentGatewayMetrics
             "paymentgateway.bank.request.duration", "s", "Duration of acquiring bank calls.");
     }
 
-    /// <summary>Counts one payment request that reached the use case, by result.</summary>
     public void RecordOutcome(string result)
     {
         _paymentOutcomes.Add(1, new KeyValuePair<string, object?>("result", result));
     }
 
-    /// <summary>Records one acquiring bank call, by outcome.</summary>
     public void RecordBankRequestDuration(TimeSpan duration, string outcome)
     {
         _bankRequestDuration.Record(duration.TotalSeconds, new KeyValuePair<string, object?>("outcome", outcome));

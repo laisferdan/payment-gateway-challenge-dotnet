@@ -11,10 +11,6 @@ using WireMock.ResponseBuilders;
 
 namespace PaymentGateway.Api.Tests.Integration;
 
-/// <summary>
-/// Constitution VIII: a card number must never reach a log entry, including through framework
-/// logging of request paths. Runs with the application's real logging configuration.
-/// </summary>
 public class CardDataLoggingTests : IClassFixture<WireMockBankFixture>
 {
     private const string CardNumber = "4111111111111111";
@@ -48,7 +44,7 @@ public class CardDataLoggingTests : IClassFixture<WireMockBankFixture>
     [InlineData(503, "", "GBP")]
     public async Task RequestBody_WhenItContainsCardData_IsNotLogged(int bankStatus, string bankBody, string currency)
     {
-        // Arrange – authorized, rejected (another field invalid) and bank unavailable.
+        // Arrange
         _bank.Server
             .Given(Request.Create().WithPath("/payments").UsingPost())
             .RespondWith(Response.Create().WithStatusCode(bankStatus).WithHeader("Content-Type", "application/json").WithBody(bankBody));
@@ -67,7 +63,7 @@ public class CardDataLoggingTests : IClassFixture<WireMockBankFixture>
     [Fact]
     public async Task UnreadableBody_WhenItContainsCardData_IsNotLogged()
     {
-        // Arrange – the amount cannot be read, the card number and CVV are there in full.
+        // Arrange
         using PaymentGatewayFactory factory = new(_bank.Url);
         using HttpClient client = factory.CreateClient();
         string json = $$"""{"cardNumber":"{{CardNumber}}","expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":"ten","cvv":"{{Cvv}}"}""";
@@ -101,8 +97,7 @@ public class CardDataLoggingTests : IClassFixture<WireMockBankFixture>
     [Fact]
     public void Logging_ForHostingDiagnostics_IsOffSoNoRequestPathScopeIsCreated()
     {
-        // Arrange – the host opens a log scope holding RequestPath only when this category is
-        // enabled at Critical; with scopes included, that path would appear in every entry.
+        // Arrange
         using PaymentGatewayFactory factory = new(_bank.Url);
         ILoggerFactory loggerFactory = factory.Services.GetRequiredService<ILoggerFactory>();
 

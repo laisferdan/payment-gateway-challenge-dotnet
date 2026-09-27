@@ -10,16 +10,10 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace PaymentGateway.Api.Tests.Integration.Fixtures;
 
-/// <summary>
-/// The gateway in-process with its real pipeline and adapters. Only the acquiring bank is
-/// replaced (by a WireMock URL), time is fixed and logs are collected. Runs as Production so no
-/// Development-only behaviour leaks into the tests.
-/// </summary>
 public sealed class PaymentGatewayFactory : WebApplicationFactory<Program>
 {
     public static readonly DateTimeOffset Now = new(2026, 9, 26, 12, 0, 0, TimeSpan.Zero);
 
-    /// <summary>Overrides for tests that exercise the bank timeout: 1 s, the smallest allowed.</summary>
     public static readonly IDictionary<string, string?> ShortBankTimeout = new Dictionary<string, string?>
     {
         ["AcquiringBank:TimeoutSeconds"] = "1",

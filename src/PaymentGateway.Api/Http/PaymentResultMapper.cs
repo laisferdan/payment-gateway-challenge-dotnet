@@ -13,9 +13,6 @@ using PaymentGateway.Api.Domain;
 
 namespace PaymentGateway.Api.Http;
 
-/// <summary>
-/// The single place where use-case results become HTTP responses.
-/// </summary>
 public sealed partial class PaymentResultMapper
 {
     private const string ProblemJson = "application/problem+json";

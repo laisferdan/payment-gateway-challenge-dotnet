@@ -19,10 +19,6 @@ using WireMock.ResponseBuilders;
 
 namespace PaymentGateway.Api.Tests.Integration;
 
-/// <summary>
-/// The real bank adapter, resolved from the application's services (real HttpClient setup and
-/// options), against WireMock standing in for the bank simulator.
-/// </summary>
 public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
 {
     private static readonly PaymentRequest ValidRequest = PaymentRequest.Create(
@@ -85,7 +81,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
     [InlineData(200, """{"authorized":true,"authorization_code":""}""", BankFailureKind.Error)]
     public async Task RequestAuthorization_WhenBankFails_ReturnsFailureAfterOneCall(int statusCode, string bankBody, BankFailureKind expected)
     {
-        // Arrange – 503; 400; another status; unreadable body; missing "authorized"; authorized without a code.
+        // Arrange
         StubBank(statusCode, bankBody);
         using PaymentGatewayFactory factory = new(_bank.Url);
         IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
@@ -101,8 +97,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
     [Fact]
     public async Task RequestAuthorization_WhenBankDoesNotAnswerInTime_ReturnsUnavailable()
     {
-        // Arrange – the bank answers after 3 s; the timeout is 1 s. A server of its own: the late
-        // request would otherwise be recorded in the shared server during the next test.
+        // Arrange
         using WireMockBankFixture slowBank = new();
         StubBank(slowBank, 200, """{"authorized":true,"authorization_code":"abc"}""", TimeSpan.FromSeconds(3));
         using PaymentGatewayFactory factory = new(slowBank.Url, PaymentGatewayFactory.ShortBankTimeout);
@@ -111,15 +106,14 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
         // Act
         BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest, CancellationToken.None);
 
-        // Assert – WireMock records a request only once its delayed response completes, so the
-        // single-call guarantee is asserted by the other failure cases, not here.
+        // Assert
         Assert.Equal(BankFailureKind.Unavailable, Assert.IsType<BankAuthorizationResult.Failed>(result).Kind);
     }
 
     [Fact]
     public async Task RequestAuthorization_WhenBankCannotBeReached_ReturnsUnavailable()
     {
-        // Arrange – an unused local port, so the shared WireMock server keeps running.
+        // Arrange
         using PaymentGatewayFactory factory = new($"http://127.0.0.1:{UnusedPort()}");
         IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
 
@@ -133,7 +127,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
     [Fact]
     public async Task RequestAuthorization_WhenCallerCancels_PropagatesCancellation()
     {
-        // Arrange – the only case built directly: it needs a caller token, not the options.
+        // Arrange
         using WireMockBankFixture slowBank = new();
         StubBank(slowBank, 200, """{"authorized":true,"authorization_code":"abc"}""", TimeSpan.FromSeconds(3));
         using HttpClient httpClient = new() { BaseAddress = new Uri(slowBank.Url) };

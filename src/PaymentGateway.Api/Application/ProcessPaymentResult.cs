@@ -2,7 +2,6 @@ using PaymentGateway.Api.Domain;
 
 namespace PaymentGateway.Api.Application;
 
-/// <summary>The outcome of processing one payment request – a closed set.</summary>
 public abstract record ProcessPaymentResult
 {
     private ProcessPaymentResult()

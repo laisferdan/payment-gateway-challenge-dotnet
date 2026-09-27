@@ -4,9 +4,6 @@ using PaymentGateway.Api.Domain;
 
 namespace PaymentGateway.Api.Application;
 
-/// <summary>
-/// UC1 – Process a payment: validate, ask the acquiring bank once, record the decision.
-/// </summary>
 public sealed partial class ProcessPaymentService
 {
     private readonly IAcquiringBank _acquiringBank;

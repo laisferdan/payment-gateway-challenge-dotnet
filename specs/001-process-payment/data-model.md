@@ -64,8 +64,9 @@ Depends on nothing but the BCL.
 
 ### PaymentStatus (enum)
 
-`Authorized`, `Declined` – the statuses of a recorded payment. `Rejected` is **not** a member:
-a rejected request never becomes a `Payment` (FR-012); it exists only in the HTTP contract.
+`Authorized`, `Declined`, `Rejected`. `Authorized` and `Declined` are the bank's decision and the
+only statuses a recorded `Payment` has; `Rejected` is returned in the `400` body only – a rejected
+request never becomes a `Payment` (FR-012).
 
 ### Payment (entity – recorded)
 

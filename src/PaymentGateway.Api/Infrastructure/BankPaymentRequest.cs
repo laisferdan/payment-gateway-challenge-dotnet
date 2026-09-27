@@ -4,7 +4,6 @@ using PaymentGateway.Api.Domain;
 
 namespace PaymentGateway.Api.Infrastructure;
 
-/// <summary>The acquiring bank's request contract (snake_case). Carries the full card data.</summary>
 internal sealed class BankPaymentRequest
 {
     [JsonPropertyName("card_number")]

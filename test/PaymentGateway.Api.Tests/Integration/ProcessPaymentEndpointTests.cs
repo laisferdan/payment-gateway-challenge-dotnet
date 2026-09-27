@@ -15,7 +15,6 @@ using WireMock.ResponseBuilders;
 
 namespace PaymentGateway.Api.Tests.Integration;
 
-/// <summary>POST /api/payments through the real pipeline; only the bank is WireMock.</summary>
 public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
 {
     private const string CardNumber = "2222405343248877";
@@ -145,7 +144,7 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
     [InlineData("", "body")]
     public async Task Post_WhenBodyIsUnreadable_ReturnsRejected(string json, string expectedField)
     {
-        // Arrange – text for a number, a number for a string, beyond int, invalid JSON, empty body.
+        // Arrange
         StubBank(200, AuthorizedBody);
         using PaymentGatewayFactory factory = new(_bank.Url);
         using HttpClient client = factory.CreateClient();
@@ -191,8 +190,7 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
     [Fact]
     public async Task Post_WhenBankDoesNotAnswerInTime_Returns503BankUnavailable()
     {
-        // Arrange – the bank answers after 3 s; the timeout is 1 s. A server of its own: the late
-        // request would otherwise be recorded in the shared server during the next test.
+        // Arrange
         using WireMockBankFixture slowBank = new();
         slowBank.Server
             .Given(Request.Create().WithPath("/payments").UsingPost())
@@ -213,7 +211,7 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
     [InlineData(503, CardNumber, "PaymentBankFailed")]
     public async Task Post_WhenOutcomeIsAnError_TraceIdMatchesTheOutcomeLogEntry(int bankStatus, string cardNumber, string eventName)
     {
-        // Arrange – a Rejected request, and a bank that is unavailable.
+        // Arrange
         StubBank(bankStatus, bankStatus == 200 ? AuthorizedBody : UnavailableBody);
         using PaymentGatewayFactory factory = new(_bank.Url);
         using HttpClient client = factory.CreateClient();

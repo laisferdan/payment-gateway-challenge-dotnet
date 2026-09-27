@@ -15,7 +15,7 @@ public class PaymentTests
     [InlineData(PaymentStatus.Declined)]
     public void Create_FromValidRequest_CopiesSafeFields(PaymentStatus status)
     {
-        // Arrange – the request above.
+        // Arrange
 
         // Act
         Payment payment = Payment.Create(Request, status);
