@@ -13,3 +13,18 @@ services:
         source: ./imposters
         target: /imposters
       
+  payment_gateway:
+    build: .
+    container_name: payment_gateway
+    ports:
+      - "8090:8080"   # host 8090: the simulator keeps 8080 and 2525
+    environment:
+      AcquiringBank__BaseUrl: http://bank_simulator:8080
+      Swagger__Enabled: "true"
+    depends_on:
+      - bank_simulator
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3

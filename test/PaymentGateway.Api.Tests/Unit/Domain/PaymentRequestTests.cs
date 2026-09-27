@@ -1,0 +1,325 @@
+using PaymentGateway.Api.Domain;
+
+namespace PaymentGateway.Api.Tests.Unit.Domain;
+
+public class PaymentRequestTests
+{
+    private const string ValidCardNumber = "2222405343248877";
+    private const int ValidExpiryMonth = 12;
+    private const int ValidExpiryYear = 2030;
+    private const string ValidCurrency = "GBP";
+    private const int ValidAmount = 1050;
+    private const string ValidCvv = "123";
+
+    private static readonly DateOnly Today = new(2026, 9, 26);
+
+    [Fact]
+    public void Create_WhenAllFieldsAreValid_ReturnsRequest()
+    {
+        // Arrange – the valid values above.
+
+        // Act
+        CreatePaymentRequestResult result = PaymentRequest.Create(
+            ValidCardNumber, ValidExpiryMonth, ValidExpiryYear, ValidCurrency, ValidAmount, ValidCvv, Today);
+
+        // Assert
+        Assert.Empty(result.Errors);
+        PaymentRequest request = Assert.IsType<PaymentRequest>(result.Request);
+        Assert.Equal(ValidCardNumber, request.CardNumber);
+        Assert.Equal(ValidExpiryMonth, request.ExpiryMonth);
+        Assert.Equal(ValidExpiryYear, request.ExpiryYear);
+        Assert.Equal(ValidCurrency, request.Currency);
+        Assert.Equal(ValidAmount, request.Amount);
+        Assert.Equal(ValidCvv, request.Cvv);
+        Assert.Equal("8877", request.CardNumberLastFour);
+    }
+
+    [Fact]
+    public void Create_WhenCardNumberHasLeadingZeroLastFour_KeepsZeros()
+    {
+        // Arrange
+        const string cardNumber = "2222405343240012";
+
+        // Act
+        CreatePaymentRequestResult result = PaymentRequest.Create(
+            cardNumber, ValidExpiryMonth, ValidExpiryYear, ValidCurrency, ValidAmount, ValidCvv, Today);
+
+        // Assert
+        Assert.Equal("0012", result.Request?.CardNumberLastFour);
+    }
+
+    [Theory]
+    [InlineData("22224053432488")]
+    [InlineData("2222405343248877123")]
+    public void Create_WhenCardNumberIsWithinBounds_Accepts(string cardNumber)
+    {
+        // Arrange – 14 and 19 digits.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(cardNumber: cardNumber);
+
+        // Assert
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData("2222405343248")]
+    [InlineData("22224053432488771234")]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("2222 4053 4324 8877")]
+    [InlineData("2222-4053-4324-8877")]
+    [InlineData("22224053432488a7")]
+    [InlineData("٢٢٢٢٤٠٥٣٤٣٢٤٨٨٧٧")]
+    public void Create_WhenCardNumberIsInvalid_RejectsCardNumberWithoutEchoingIt(string? cardNumber)
+    {
+        // Arrange – 13 and 20 digits, missing, empty, separators, a letter, non-ASCII digits.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(cardNumber: cardNumber);
+
+        // Assert
+        AssertSingleErrorOn(result, "cardNumber", cardNumber);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(12)]
+    public void Create_WhenExpiryMonthIsWithinBounds_Accepts(int expiryMonth)
+    {
+        // Arrange – the year is far enough ahead for any month.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(expiryMonth: expiryMonth);
+
+        // Assert
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(13)]
+    [InlineData(null)]
+    public void Create_WhenExpiryMonthIsInvalid_RejectsExpiryMonth(int? expiryMonth)
+    {
+        // Arrange – below 1, above 12, missing.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(expiryMonth: expiryMonth);
+
+        // Assert
+        AssertSingleErrorOn(result, "expiryMonth", null);
+    }
+
+    [Theory]
+    [InlineData(9, 2026)]
+    [InlineData(12, 9999)]
+    public void Create_WhenExpiryIsCurrentMonthOrLater_Accepts(int expiryMonth, int expiryYear)
+    {
+        // Arrange – today is 2026-09-26: the current month is still valid; 9999 is the last year.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(expiryMonth: expiryMonth, expiryYear: expiryYear);
+
+        // Assert
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData(2025)]
+    [InlineData(27)]
+    [InlineData(10000)]
+    [InlineData(null)]
+    public void Create_WhenExpiryYearIsInvalid_RejectsExpiryYear(int? expiryYear)
+    {
+        // Arrange – last year, a two-digit year, beyond 9999, missing.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(expiryYear: expiryYear);
+
+        // Assert
+        AssertSingleErrorOn(result, "expiryYear", null);
+    }
+
+    [Fact]
+    public void Create_WhenExpiryIsLastMonth_RejectsExpiryYear()
+    {
+        // Arrange – 08/2026 on 2026-09-26: each part is valid, the combination is in the past.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(expiryMonth: 8, expiryYear: 2026);
+
+        // Assert
+        AssertSingleErrorOn(result, "expiryYear", null);
+    }
+
+    [Fact]
+    public void Create_WhenMonthAndYearAreBothInvalid_DoesNotAddCombinationError()
+    {
+        // Arrange – month 13 and a past year.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(expiryMonth: 13, expiryYear: 2020);
+
+        // Assert
+        Assert.Equal(["expiryMonth", "expiryYear"], result.Errors.Select(error => error.Field));
+    }
+
+    [Theory]
+    [InlineData("GBP")]
+    [InlineData("EUR")]
+    [InlineData("USD")]
+    public void Create_WhenCurrencyIsSupported_Accepts(string currency)
+    {
+        // Arrange – the three supported codes.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(currency: currency);
+
+        // Assert
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData("gbp")]
+    [InlineData("GB")]
+    [InlineData("JPY")]
+    [InlineData(null)]
+    [InlineData("")]
+    public void Create_WhenCurrencyIsInvalid_RejectsCurrencyListingSupportedCodes(string? currency)
+    {
+        // Arrange – lowercase, too short, unsupported, missing, empty.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(currency: currency);
+
+        // Assert
+        AssertSingleErrorOn(result, "currency", null);
+        Assert.Equal("Currency must be one of: GBP, EUR, USD.", result.Errors[0].Message);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(int.MaxValue)]
+    public void Create_WhenAmountIsPositive_Accepts(int amount)
+    {
+        // Arrange – the smallest amount and the largest representable one.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(amount: amount);
+
+        // Assert
+        Assert.Empty(result.Errors);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(null)]
+    public void Create_WhenAmountIsInvalid_RejectsAmount(int? amount)
+    {
+        // Arrange – negative, zero, missing.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(amount: amount);
+
+        // Assert
+        AssertSingleErrorOn(result, "amount", null);
+    }
+
+    [Theory]
+    [InlineData("123")]
+    [InlineData("0123")]
+    public void Create_WhenCvvIsWithinBounds_AcceptsAndKeepsLeadingZeros(string cvv)
+    {
+        // Arrange – 3 and 4 digits, one with a leading zero.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(cvv: cvv);
+
+        // Assert
+        Assert.Equal(cvv, result.Request?.Cvv);
+    }
+
+    [Theory]
+    [InlineData("12")]
+    [InlineData("12345")]
+    [InlineData("12a")]
+    [InlineData(null)]
+    [InlineData("")]
+    public void Create_WhenCvvIsInvalid_RejectsCvvWithoutEchoingIt(string? cvv)
+    {
+        // Arrange – 2 and 5 digits, a letter, missing, empty.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(cvv: cvv);
+
+        // Assert
+        AssertSingleErrorOn(result, "cvv", cvv);
+    }
+
+    [Fact]
+    public void Create_WhenSeveralFieldsAreInvalid_ReturnsEveryError()
+    {
+        // Arrange – card number, currency and amount all invalid.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(cardNumber: "1234", currency: "gbp", amount: 0);
+
+        // Assert
+        Assert.Equal(["cardNumber", "currency", "amount"], result.Errors.Select(error => error.Field));
+    }
+
+    [Theory]
+    [InlineData(ValidCardNumber + " ", ValidCurrency, ValidCvv, "cardNumber")]
+    [InlineData(ValidCardNumber, " " + ValidCurrency, ValidCvv, "currency")]
+    [InlineData(ValidCardNumber, ValidCurrency, " " + ValidCvv, "cvv")]
+    public void Create_WhenValueNeedsTrimming_IsRejected(string cardNumber, string currency, string cvv, string field)
+    {
+        // Arrange – one value with surrounding whitespace: it is not trimmed into validity.
+
+        // Act
+        CreatePaymentRequestResult result = CreateWith(cardNumber: cardNumber, currency: currency, cvv: cvv);
+
+        // Assert
+        Assert.Equal(field, Assert.Single(result.Errors).Field);
+    }
+
+    [Fact]
+    public void ToString_Always_MasksCardNumberAndOmitsCvv()
+    {
+        // Arrange
+        PaymentRequest request = CreateWith(cvv: "987").Request!;
+
+        // Act
+        string? text = request.ToString();
+
+        // Assert
+        Assert.Contains("************8877", text);
+        Assert.Contains("12/2030", text);
+        Assert.Contains("GBP", text);
+        Assert.Contains("1050", text);
+        Assert.DoesNotContain(ValidCardNumber, text);
+        Assert.DoesNotContain("987", text);
+    }
+
+    private static CreatePaymentRequestResult CreateWith(
+        string? cardNumber = ValidCardNumber,
+        int? expiryMonth = ValidExpiryMonth,
+        int? expiryYear = ValidExpiryYear,
+        string? currency = ValidCurrency,
+        int? amount = ValidAmount,
+        string? cvv = ValidCvv)
+    {
+        return PaymentRequest.Create(cardNumber, expiryMonth, expiryYear, currency, amount, cvv, Today);
+    }
+
+    private static void AssertSingleErrorOn(CreatePaymentRequestResult result, string field, string? submitted)
+    {
+        Assert.Null(result.Request);
+        ValidationError error = Assert.Single(result.Errors);
+        Assert.Equal(field, error.Field);
+        Assert.False(string.IsNullOrWhiteSpace(error.Message));
+        Assert.True(string.IsNullOrEmpty(submitted) || !error.Message.Contains(submitted), "The message echoes the submitted value.");
+    }
+}

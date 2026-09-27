@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build (warnings are errors)
+        run: dotnet build --no-restore -c Release
+
+      - name: Verify formatting
+        run: dotnet format --verify-no-changes --no-restore
+
+      # E2E tests need the bank simulator and are excluded here.
+      - name: Test (unit + integration) with coverage
+        run: >
+          dotnet test --no-build -c Release
+          --filter "Category!=E2E"
+          --collect:"XPlat Code Coverage"
+          --results-directory ./coverage
+
+      - name: Upload coverage (Cobertura, no threshold)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/**/coverage.cobertura.xml
+
+      - name: Build container image
+        run: docker build -t payment-gateway .

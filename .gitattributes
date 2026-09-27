@@ -1,0 +1,3 @@
+* text=auto
+# .editorconfig requires CRLF for C# files; keep them CRLF on every OS so dotnet format passes in CI.
+*.cs text eol=crlf

@@ -1,0 +1,62 @@
+# Payment Gateway – example requests (VS Code REST Client, Rider, Visual Studio).
+# Local run: dotnet run --project src/PaymentGateway.Api (simulator: docker compose up -d bank_simulator)
+# With Docker Compose use: @base = http://localhost:8090
+@base = http://localhost:5067
+
+### Authorized – the simulator authorizes cards ending in an odd digit
+POST {{base}}/api/payments
+Content-Type: application/json
+
+{
+  "cardNumber": "2222405343248877",
+  "expiryMonth": 12,
+  "expiryYear": 2030,
+  "currency": "GBP",
+  "amount": 1050,
+  "cvv": "123"
+}
+
+### Declined – cards ending in an even digit
+POST {{base}}/api/payments
+Content-Type: application/json
+
+{
+  "cardNumber": "2222405343248878",
+  "expiryMonth": 12,
+  "expiryYear": 2030,
+  "currency": "GBP",
+  "amount": 1050,
+  "cvv": "123"
+}
+
+### Rejected – 400 listing every invalid field; the bank is not called
+POST {{base}}/api/payments
+Content-Type: application/json
+
+{
+  "cardNumber": "1234",
+  "expiryMonth": 12,
+  "expiryYear": 2030,
+  "currency": "gbp",
+  "amount": 0,
+  "cvv": "123"
+}
+
+### Bank unavailable – 503 bank_unavailable (the simulator fails cards ending in 0)
+POST {{base}}/api/payments
+Content-Type: application/json
+
+{
+  "cardNumber": "2222405343248870",
+  "expiryMonth": 12,
+  "expiryYear": 2030,
+  "currency": "GBP",
+  "amount": 1050,
+  "cvv": "123"
+}
+
+### Unknown route – 404 ProblemDetails with traceId
+GET {{base}}/api/unknown
+
+### Health – liveness
+GET {{base}}/health

@@ -267,7 +267,7 @@ technology choice constrained by the constitution. Format: Decision / Rationale 
 
 | Package | Project | Licence | Why |
 |---|---|---|---|
-| Swashbuckle.AspNetCore (6.x, already present) | `PaymentGateway.Api` | MIT | OpenAPI + XML comments |
+| Swashbuckle.AspNetCore (6.9.0; the template's 6.2.3 dropped `application/problem+json` response types from the document) | `PaymentGateway.Api` | MIT | OpenAPI + XML comments |
 | xunit, xunit.runner.visualstudio | `PaymentGateway.Api.Tests` | Apache-2.0 | test framework |
 | Microsoft.NET.Test.Sdk | `PaymentGateway.Api.Tests` | MIT | test host |
 | Microsoft.AspNetCore.Mvc.Testing (8.0.x; replaces the template's 6.0.24) | `PaymentGateway.Api.Tests` | MIT | `WebApplicationFactory` |
@@ -329,6 +329,12 @@ report needed – R12).
 
     No event has a card number, CVV or raw invalid value. A rejected request logs field names
     only, because its values are untrusted and may contain card data.
+  - **Hosting scope** (found during implementation): the host opens a log scope holding
+    `RequestPath` whenever `Microsoft.AspNetCore.Hosting.Diagnostics` is enabled at any level; with
+    `IncludeScopes` that path – which may hold a pasted card number – would be printed on every
+    entry of the request. That category is therefore `None`. The host then starts a request
+    `Activity` only if its `ActivitySource` has a listener, so `Program.cs` registers one for
+    `Microsoft.AspNetCore`; without it there is no trace id in logs or `ProblemDetails`.
   - **Framework logs** (Constitution 1.0.2, Principle VIII): framework request logging
     (`AddHttpLogging` / `UseHttpLogging`, W3C logging) is **not enabled**, and
     `appsettings.json` keeps `Logging:LogLevel:Microsoft.AspNetCore` **and**

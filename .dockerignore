@@ -1,0 +1,16 @@
+**/bin/
+**/obj/
+test/
+specs/
+docs/
+coverage/
+.git/
+.github/
+.idea/
+.vs/
+.vscode/
+.claude/
+.specify/
+**/*.user
+Dockerfile
+.dockerignore
