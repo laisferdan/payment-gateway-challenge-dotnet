@@ -204,8 +204,10 @@ Controllers and DTOs are XML-documented (they feed OpenAPI).
 - **PaymentsController**: `POST /api/payments`; depends on `ProcessPaymentService` and
   `PaymentResultMapper`.
 - **PostPaymentRequest**: nullable members mirroring `ProcessPaymentCommand`; `ToString()`
-  overridden to mask card number and CVV; each property's XML comment states its validation rule
-  so the OpenAPI document shows the field constraints (research R12).
+  overridden to mask card number and CVV. Field descriptions in the OpenAPI document come from
+  `PaymentRuleSchemaFilter` (an `ISchemaFilter`), which copies each property's rule message from
+  `PaymentRequest.Messages` – not from per-property XML comments – so the document and a Rejected
+  response cannot drift (research R12).
 - **PaymentResponse**: `id`, `status` (`PaymentStatus`; always `Authorized` or `Declined` here), `cardNumberLastFour`,
   `expiryMonth`, `expiryYear`, `currency`, `amount`. The single merchant-facing representation of
   a payment – returned by processing and, from UC2, by retrieval.

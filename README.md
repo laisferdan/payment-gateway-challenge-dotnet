@@ -227,8 +227,11 @@ not make the gateway look dead.
 - **Currencies**: `GBP`, `EUR`, `USD`, exact uppercase codes. **Amount** must be at least 1.
 - **No coercion**: values are never trimmed, padded or case-converted into validity.
 - **Unreadable bodies** get fixed messages that never echo the submitted value.
-- **Field rules in the OpenAPI document** are repeated in the request type's XML comments: the rules
-  live in the domain, and validation attributes on the HTTP type would move them into the adapter.
+- **Field rules in the OpenAPI document** come from `PaymentRuleSchemaFilter`, a Swagger schema
+  filter that copies each `PostPaymentRequest` property's description from `PaymentRequest.Messages`
+  instead of repeating the rule text in per-property XML comments: the rules live in the domain, and
+  validation attributes (or duplicated rule text) on the HTTP type would let the document and a
+  Rejected response drift apart.
 - **Payment ids** are random v4 GUIDs, so they are unique and not guessable.
 - **Storage** is in memory, as the assessment allows: payments are lost on restart. Concurrency safety
   comes from an immutable `Payment` in a `ConcurrentDictionary`; there is no stress test.
