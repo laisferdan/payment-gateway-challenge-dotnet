@@ -2,6 +2,7 @@ using System.Diagnostics;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.Extensions.Options;
 
 using PaymentGateway.Api.Application;
@@ -14,6 +15,7 @@ public sealed partial class PaymentResultMapper
     private const string ProblemJson = "application/problem+json";
     private const string BadRequestType = "https://tools.ietf.org/html/rfc9110#section-15.5.1";
     private const string RejectedTitle = "Payment rejected";
+    private const string ValidationTitle = "One or more validation errors occurred.";
     private const string BankFailureTitle = "Payment could not be processed";
     private const string BadGatewayType = "https://tools.ietf.org/html/rfc9110#section-15.6.3";
     private const string ServiceUnavailableType = "https://tools.ietf.org/html/rfc9110#section-15.6.4";
@@ -42,12 +44,27 @@ public sealed partial class PaymentResultMapper
     }
 
     /// <summary>
-    /// The <c>InvalidModelStateResponseFactory</c>: a body that could not be read is Rejected like any
-    /// other invalid payment. A value of the wrong type gets its field's rule message; malformed JSON
-    /// or an empty body gets one <c>body</c> error. The submitted values are never echoed.
+    /// The <c>InvalidModelStateResponseFactory</c>. For <see cref="PaymentsController.ProcessPaymentAsync"/>,
+    /// a body that could not be read is Rejected like any other invalid payment: a value of the wrong
+    /// type gets its field's rule message, malformed JSON or an empty body gets one <c>body</c> error,
+    /// the submitted values are never echoed, and the binding paths are logged. Any other action gets a
+    /// plain <see cref="ValidationProblemDetails"/> with no <c>paymentStatus</c>.
     /// </summary>
     public IActionResult ToUnreadableBodyResult(ActionContext context)
     {
+        bool isProcessPayment = context.ActionDescriptor is ControllerActionDescriptor descriptor
+            && descriptor.MethodInfo.Name == nameof(PaymentsController.ProcessPaymentAsync);
+        if (!isProcessPayment)
+        {
+            ValidationProblemDetails validationProblem = new(context.ModelState)
+            {
+                Type = BadRequestType,
+                Title = ValidationTitle,
+                Status = StatusCodes.Status400BadRequest,
+            };
+            return Problem(validationProblem, context.HttpContext);
+        }
+
         List<string> invalidFields = context.ModelState
             .Where(entry => entry.Value is { Errors.Count: > 0 })
             .Select(entry => entry.Key)
