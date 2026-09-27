@@ -465,13 +465,13 @@ PaymentGateway.Api --counters PaymentGateway` shows outcomes and bank durations;
 **Purpose**: one `docker compose up` runs gateway + simulator; CI enforces every gate
 (research R16, R17, Constitution XII).
 
-- [ ] T074 [P] Create `Dockerfile` (multi-stage `mcr.microsoft.com/dotnet/sdk:8.0` → publish
+- [X] T074 [P] Create `Dockerfile` (multi-stage `mcr.microsoft.com/dotnet/sdk:8.0` → publish
   `src/PaymentGateway.Api` → `mcr.microsoft.com/dotnet/aspnet:8.0`; install `curl` for the
   healthcheck; `USER $APP_UID`; `EXPOSE 8080`; `ENTRYPOINT ["dotnet","PaymentGateway.Api.dll"]`)
   and `.dockerignore` (`bin/`, `obj/`, `test/`, `specs/`, `.git/`). **Verify**:
   `docker build -t payment-gateway .` succeeds; `docker run --rm payment-gateway id` shows a
   non-root uid. `build:`
-- [ ] T075 Add the `payment_gateway` service to `docker-compose.yml` exactly as research R16
+- [X] T075 Add the `payment_gateway` service to `docker-compose.yml` exactly as research R16
   (build `.`, ports `8090:8080`, `AcquiringBank__BaseUrl: http://bank_simulator:8080`,
   `Swagger__Enabled: "true"`, `depends_on: bank_simulator`, curl healthcheck on `/health`), leaving
   `bank_simulator`, `version` and `imposters/` unchanged. **Verify**: `docker compose up --build` →
@@ -517,7 +517,7 @@ PaymentGateway.Api --counters PaymentGateway` shows outcomes and bank durations;
   `cvv` "Required. 3–4 characters, digits 0-9 only." Add `[ProducesResponseType]` on
   `ProcessPaymentAsync` for `200` (`PaymentResponse`), `400` (`PaymentRejectedProblemDetails`),
   `502` and `503` (`BankFailureProblemDetails`), `500` (`ProblemDetails`). Green for T079. `docs:`
-- [ ] T081 [UC1] Write `test/EndToEnd/SimulatorGatewayFactory.cs` (`WebApplicationFactory<Program>`
+- [X] T081 [UC1] Write `test/EndToEnd/SimulatorGatewayFactory.cs` (`WebApplicationFactory<Program>`
   with `AcquiringBank:BaseUrl` `http://localhost:8080` – the real simulator – the **real clock**
   (no `FakeTimeProvider`) and the **real logging** configuration, no fake logging) and
   `test/EndToEnd/ProcessPaymentJourneyTests.cs` with `[Trait("Category", "E2E")]`: card ending `7`
@@ -542,7 +542,7 @@ PaymentGateway.Api --counters PaymentGateway` shows outcomes and bank durations;
   `ConcurrentDictionary` without a stress test (analysis E4); production next steps) plus "How
   this was built" linking `specs/` and the constitution. **Verify**: every command in it runs as
   written. `docs:`
-- [ ] T084 Run the Definition of Done: `dotnet build -c Release` (0 warnings),
+- [X] T084 Run the Definition of Done: `dotnet build -c Release` (0 warnings),
   `dotnet format --verify-no-changes`, `dotnet test --filter "Category!=E2E" --collect:"XPlat Code
   Coverage"`, the E2E run, and every scenario of [quickstart.md](quickstart.md) §1–§8 including the
   manual latency check of §5 (SC-006, research R18); fix any gap in the task that introduced it.
@@ -648,9 +648,13 @@ Deviations and findings recorded while implementing; the code and tests reflect 
 - **T084** – `Properties/launchSettings.json` binds only `http://localhost:5067`: the template's
   HTTPS URL made `dotnet run` fail without a developer certificate, and the gateway serves HTTP only
   (TLS terminated upstream).
-- **Pending Docker** (deferred by request): T074 image build, T075 `docker compose up`, T081 E2E run
-  against the simulator, and the Docker parts of T084. Files are written; T081's tests compile and
-  are excluded from the default run.
+- **T074/T075/T081/T084 (2026-09-27)** – Docker was unavailable during the initial pass, so these
+  were deferred by request. With Docker running: `docker build` succeeds and runs as
+  `uid=1654(app)` (T074); `docker compose up --build` serves a healthy `payment_gateway` on
+  `:8090` and a card ending 7 returns `Authorized` (T075); `dotnet test --filter "Category=E2E"`
+  passes against the real simulator (T081); the full Definition of Done – build, format, unit,
+  integration, coverage, E2E and every quickstart.md §1–§8 scenario including the manual latency
+  check – passes (T084).
 
 ---
 
