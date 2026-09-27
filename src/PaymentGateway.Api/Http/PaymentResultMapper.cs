@@ -9,7 +9,7 @@ using PaymentGateway.Api.Domain;
 
 namespace PaymentGateway.Api.Http;
 
-public sealed class PaymentResultMapper
+public sealed partial class PaymentResultMapper
 {
     private const string ProblemJson = "application/problem+json";
     private const string BadRequestType = "https://tools.ietf.org/html/rfc9110#section-15.5.1";
@@ -22,10 +22,12 @@ public sealed class PaymentResultMapper
     private const string UnreadableBodyMessage = "The request body must be a JSON object with the payment fields.";
 
     private readonly ProblemDetailsOptions _problemDetailsOptions;
+    private readonly ILogger<PaymentResultMapper> _logger;
 
-    public PaymentResultMapper(IOptions<ProblemDetailsOptions> problemDetailsOptions)
+    public PaymentResultMapper(IOptions<ProblemDetailsOptions> problemDetailsOptions, ILogger<PaymentResultMapper> logger)
     {
         _problemDetailsOptions = problemDetailsOptions.Value;
+        _logger = logger;
     }
 
     public IActionResult ToActionResult(ProcessPaymentResult result, HttpContext httpContext)
@@ -46,9 +48,14 @@ public sealed class PaymentResultMapper
     /// </summary>
     public IActionResult ToUnreadableBodyResult(ActionContext context)
     {
-        List<ValidationError> errors = context.ModelState
+        List<string> invalidFields = context.ModelState
             .Where(entry => entry.Value is { Errors.Count: > 0 })
-            .Select(entry => ToValidationError(entry.Key))
+            .Select(entry => entry.Key)
+            .Distinct()
+            .ToList();
+        LogPaymentRequestUnreadable(_logger, string.Join(",", invalidFields));
+        List<ValidationError> errors = invalidFields
+            .Select(ToValidationError)
             .DistinctBy(error => error.Field)
             .ToList();
         return ToActionResult(new ProcessPaymentResult.Rejected(errors), context.HttpContext);
