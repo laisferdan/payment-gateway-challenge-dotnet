@@ -12,11 +12,13 @@ public sealed class PaymentsController : ControllerBase
     private const string ProblemJson = "application/problem+json";
 
     private readonly ProcessPaymentService _processPaymentService;
+    private readonly RetrievePaymentService _retrievePaymentService;
     private readonly PaymentResultMapper _mapper;
 
-    public PaymentsController(ProcessPaymentService processPaymentService, PaymentResultMapper mapper)
+    public PaymentsController(ProcessPaymentService processPaymentService, RetrievePaymentService retrievePaymentService, PaymentResultMapper mapper)
     {
         _processPaymentService = processPaymentService;
+        _retrievePaymentService = retrievePaymentService;
         _mapper = mapper;
     }
 
@@ -44,6 +46,31 @@ public sealed class PaymentsController : ControllerBase
     public async Task<IActionResult> ProcessPaymentAsync(PostPaymentRequest request)
     {
         ProcessPaymentResult result = await _processPaymentService.ProcessAsync(request.ToCommand());
+        return _mapper.ToActionResult(result, HttpContext);
+    }
+
+    /// <summary>Retrieves a previously processed payment.</summary>
+    /// <remarks>
+    /// Any GUID notation the platform parses is accepted – canonical, without hyphens, in braces
+    /// or in parentheses – in any letter case, with surrounding whitespace ignored. Retrieval has
+    /// no side effects and never contacts the acquiring bank.
+    /// </remarks>
+    /// <param name="id">The payment id returned when the payment was processed.</param>
+    /// <response code="200">The payment, with exactly the same fields as the processing response.</response>
+    /// <response code="400">
+    /// Invalid payment id – the value is not a GUID in any accepted form. No payment was looked
+    /// up; unlike the processing <c>400</c>, there is no <c>paymentStatus</c>.
+    /// </response>
+    /// <response code="404">No Authorized or Declined payment has this id.</response>
+    /// <response code="500">Unexpected error. No details are disclosed.</response>
+    [HttpGet("{id}")]
+    [ProducesResponseType(typeof(PaymentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest, ProblemJson)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound, ProblemJson)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError, ProblemJson)]
+    public IActionResult RetrievePayment(Guid id)
+    {
+        RetrievePaymentResult result = _retrievePaymentService.Retrieve(id);
         return _mapper.ToActionResult(result, HttpContext);
     }
 }

@@ -104,5 +104,10 @@ public class ErrorFormatTests : IClassFixture<WireMockBankFixture>
         {
             throw new InvalidOperationException(Secret);
         }
+
+        public Payment? GetById(Guid id)
+        {
+            throw new InvalidOperationException(Secret);
+        }
     }
 }

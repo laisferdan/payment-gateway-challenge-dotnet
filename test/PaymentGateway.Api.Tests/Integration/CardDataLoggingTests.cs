@@ -75,6 +75,43 @@ public class CardDataLoggingTests : IClassFixture<WireMockBankFixture>
         Assert.DoesNotContain(factory.LogCollector.GetSnapshot(), record => LogText.Of(record).Contains(CardNumber) || LogText.Of(record).Contains(Cvv));
     }
 
+    [Fact]
+    public async Task Get_ForAProcessedPayment_LogsNoPanOrCvv()
+    {
+        // Arrange
+        _bank.Server
+            .Given(Request.Create().WithPath("/payments").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                .WithBody("""{"authorized":true,"authorization_code":"abc"}"""));
+        using PaymentGatewayFactory factory = new(_bank.Url);
+        using HttpClient client = factory.CreateClient();
+        string json = $$"""{"cardNumber":"{{CardNumber}}","expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":1050,"cvv":"{{Cvv}}"}""";
+        HttpResponseMessage postResponse = await client.PostAsync("/api/payments", new StringContent(json, Encoding.UTF8, "application/json"));
+        string id = System.Text.Json.JsonDocument.Parse(await postResponse.Content.ReadAsStringAsync()).RootElement.GetProperty("id").GetString()!;
+
+        // Act
+        await client.GetAsync($"/api/payments/{id}");
+
+        // Assert
+        Assert.DoesNotContain(factory.LogCollector.GetSnapshot(), record => LogText.Of(record).Contains(CardNumber) || LogText.Of(record).Contains(Cvv));
+    }
+
+    [Fact]
+    public async Task Get_WithACardLikeInvalidId_IsNotLoggedOrReturned()
+    {
+        // Arrange
+        using PaymentGatewayFactory factory = new(_bank.Url);
+        using HttpClient client = factory.CreateClient();
+
+        // Act
+        HttpResponseMessage response = await client.GetAsync($"/api/payments/{CardNumber}");
+
+        // Assert
+        string text = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(CardNumber, text);
+        Assert.DoesNotContain(factory.LogCollector.GetSnapshot(), record => LogText.Of(record).Contains(CardNumber));
+    }
+
     [Theory]
     [InlineData("Microsoft.AspNetCore.Hosting.Diagnostics")]
     [InlineData("Microsoft.AspNetCore.Routing")]

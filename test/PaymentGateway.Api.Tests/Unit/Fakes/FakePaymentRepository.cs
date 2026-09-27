@@ -13,4 +13,9 @@ public sealed class FakePaymentRepository : IPaymentRepository
     {
         _payments.Add(payment);
     }
+
+    public Payment? GetById(Guid id)
+    {
+        return _payments.FirstOrDefault(payment => payment.Id == id);
+    }
 }

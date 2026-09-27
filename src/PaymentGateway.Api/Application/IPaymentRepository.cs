@@ -11,4 +11,10 @@ public interface IPaymentRepository
     /// Adds a processed payment to the store.
     /// </summary>
     void Add(Payment payment);
+
+    /// <summary>
+    /// Returns the payment recorded under <paramref name="id"/>, or <c>null</c> when none exists.
+    /// Has no side effects and is safe to call concurrently with <see cref="Add"/>.
+    /// </summary>
+    Payment? GetById(Guid id);
 }

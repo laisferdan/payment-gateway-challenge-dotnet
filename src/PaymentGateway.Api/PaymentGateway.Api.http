@@ -4,6 +4,7 @@
 @base = https://localhost:7092
 
 ### Authorized – the simulator authorizes cards ending in an odd digit
+# @name processPayment
 POST {{base}}/api/payments
 Content-Type: application/json
 
@@ -54,6 +55,19 @@ Content-Type: application/json
   "amount": 1050,
   "cvv": "123"
 }
+
+### Retrieve – process-then-retrieve (UC2); body equals the processing response above
+GET {{base}}/api/payments/{{processPayment.response.body.$.id}}
+
+### Retrieve – in braces also finds the same payment; every accepted GUID notation is
+### case-insensitive too (canonical, without hyphens, in braces or in parentheses) (UC2)
+GET {{base}}/api/payments/%7B{{processPayment.response.body.$.id}}%7D
+
+### Retrieve – not found: a well-formed but unissued id (UC2)
+GET {{base}}/api/payments/00000000-0000-0000-0000-000000000000
+
+### Retrieve – invalid id: 400 naming the id field, never 404 (UC2)
+GET {{base}}/api/payments/abc
 
 ### Unknown route – 404 ProblemDetails with traceId
 GET {{base}}/api/unknown

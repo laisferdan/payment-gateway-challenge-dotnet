@@ -19,9 +19,15 @@ public sealed partial class PaymentResultMapper
     private const string BankFailureTitle = "Payment could not be processed";
     private const string BadGatewayType = "https://tools.ietf.org/html/rfc9110#section-15.6.3";
     private const string ServiceUnavailableType = "https://tools.ietf.org/html/rfc9110#section-15.6.4";
+    private const string NotFoundType = "https://tools.ietf.org/html/rfc9110#section-15.5.5";
+    private const string NotFoundTitle = "Payment not found";
+    private const string NotFoundDetail = "No payment exists with the given id.";
     private const string BodyField = "body";
     private const string JsonPathPrefix = "$.";
     private const string UnreadableBodyMessage = "The request body must be a JSON object with the payment fields.";
+    private const string InvalidIdTitle = "Invalid payment id";
+    private const string InvalidIdField = "id";
+    private const string InvalidIdMessage = "The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6.";
 
     private readonly ProblemDetailsOptions _problemDetailsOptions;
     private readonly ILogger<PaymentResultMapper> _logger;
@@ -43,39 +49,69 @@ public sealed partial class PaymentResultMapper
         };
     }
 
+    public IActionResult ToActionResult(RetrievePaymentResult result, HttpContext httpContext)
+    {
+        return result switch
+        {
+            RetrievePaymentResult.Found found => new OkObjectResult(PaymentResponse.From(found.Payment)),
+            RetrievePaymentResult.NotFound => Problem(new ProblemDetails
+            {
+                Type = NotFoundType,
+                Title = NotFoundTitle,
+                Detail = NotFoundDetail,
+                Status = StatusCodes.Status404NotFound,
+            }, httpContext),
+            _ => throw new UnreachableException($"Unmapped result {result.GetType().Name}."),
+        };
+    }
+
     /// <summary>
     /// The <c>InvalidModelStateResponseFactory</c>. For <see cref="PaymentsController.ProcessPaymentAsync"/>,
     /// a body that could not be read is Rejected like any other invalid payment: a value of the wrong
     /// type gets its field's rule message, malformed JSON or an empty body gets one <c>body</c> error,
-    /// the submitted values are never echoed, and the binding paths are logged. Any other action gets a
-    /// plain <see cref="ValidationProblemDetails"/> with no <c>paymentStatus</c>.
+    /// the submitted values are never echoed, and the binding paths are logged. For
+    /// <see cref="PaymentsController.RetrievePayment"/>, a malformed id is refused as invalid input naming
+    /// <c>id</c> with a fixed message that never echoes the submitted value, logged as
+    /// <c>PaymentIdInvalid</c>, and no <c>paymentStatus</c>. Any other action gets a plain
+    /// <see cref="ValidationProblemDetails"/> with no <c>paymentStatus</c>.
     /// </summary>
     public IActionResult ToUnreadableBodyResult(ActionContext context)
     {
-        bool isProcessPayment = context.ActionDescriptor is ControllerActionDescriptor descriptor
-            && descriptor.MethodInfo.Name == nameof(PaymentsController.ProcessPaymentAsync);
-        if (!isProcessPayment)
+        string? actionName = (context.ActionDescriptor as ControllerActionDescriptor)?.MethodInfo.Name;
+        if (actionName == nameof(PaymentsController.ProcessPaymentAsync))
         {
-            ValidationProblemDetails validationProblem = new(context.ModelState)
-            {
-                Type = BadRequestType,
-                Title = ValidationTitle,
-                Status = StatusCodes.Status400BadRequest,
-            };
-            return Problem(validationProblem, context.HttpContext);
+            List<string> invalidFields = context.ModelState
+                .Where(entry => entry.Value is { Errors.Count: > 0 })
+                .Select(entry => entry.Key)
+                .Distinct()
+                .ToList();
+            LogPaymentRequestUnreadable(_logger, string.Join(",", invalidFields));
+            List<ValidationError> errors = invalidFields
+                .Select(ToValidationError)
+                .DistinctBy(error => error.Field)
+                .ToList();
+            return ToActionResult(new ProcessPaymentResult.Rejected(errors), context.HttpContext);
         }
 
-        List<string> invalidFields = context.ModelState
-            .Where(entry => entry.Value is { Errors.Count: > 0 })
-            .Select(entry => entry.Key)
-            .Distinct()
-            .ToList();
-        LogPaymentRequestUnreadable(_logger, string.Join(",", invalidFields));
-        List<ValidationError> errors = invalidFields
-            .Select(ToValidationError)
-            .DistinctBy(error => error.Field)
-            .ToList();
-        return ToActionResult(new ProcessPaymentResult.Rejected(errors), context.HttpContext);
+        if (actionName == nameof(PaymentsController.RetrievePayment))
+        {
+            LogPaymentIdInvalid(_logger);
+            ValidationProblemDetails invalidIdProblem = new(new Dictionary<string, string[]> { [InvalidIdField] = [InvalidIdMessage] })
+            {
+                Type = BadRequestType,
+                Title = InvalidIdTitle,
+                Status = StatusCodes.Status400BadRequest,
+            };
+            return Problem(invalidIdProblem, context.HttpContext);
+        }
+
+        ValidationProblemDetails validationProblem = new(context.ModelState)
+        {
+            Type = BadRequestType,
+            Title = ValidationTitle,
+            Status = StatusCodes.Status400BadRequest,
+        };
+        return Problem(validationProblem, context.HttpContext);
     }
 
     // "$.amount" → the amount rule; "$" or "" (malformed JSON, empty body) → the whole body.

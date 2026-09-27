@@ -99,20 +99,21 @@ retrieval response equals the processing response by construction (FR-003, resea
 |---|---|
 | `RetrievePaymentResult.Found(payment)` | `200` + `PaymentResponse` |
 | `RetrievePaymentResult.NotFound` | `404` `ProblemDetails`: `title` "Payment not found", `detail` "No payment exists with the given id.", `traceId`; the id is not echoed (R3) |
-| invalid model state on the **retrieval** action (from `UnreadableRequestHandler`) | `400` `ValidationProblemDetails`: `title` "Invalid payment id", `errors.id` = fixed message (never the submitted value), `traceId`, **no `paymentStatus`** (R4) |
-| invalid model state on the **processing** action (from `UnreadableRequestHandler`) | UC1's Rejected body, unchanged (`paymentStatus: "Rejected"`) |
+| invalid model state on the **retrieval** action (from `PaymentResultMapper.ToUnreadableBodyResult`) | `400` `ValidationProblemDetails`: `title` "Invalid payment id", `errors.id` = fixed message (never the submitted value), `traceId`, **no `paymentStatus`** (R4) |
+| invalid model state on the **processing** action (from `PaymentResultMapper.ToUnreadableBodyResult`) | UC1's Rejected body, unchanged (`paymentStatus: "Rejected"`) |
 
-The action-aware branching (processing vs any other action) is UC1's `UnreadableRequestHandler`
-(UC1 research R3); UC2 adds the retrieval case there, and the handler logs `PaymentIdInvalid`. The action is identified by `ControllerActionDescriptor.MethodInfo.Name`
-compared with `nameof` of the controller method (not `ActionName`, which drops the `Async`
-suffix).
+The action-aware branching (processing vs any other action) is UC1's
+`PaymentResultMapper.ToUnreadableBodyResult` (UC1 research R3); UC2 adds the retrieval branch
+there, and it logs `PaymentIdInvalid`. The action is identified by
+`ControllerActionDescriptor.MethodInfo.Name` compared with `nameof` of the controller method (not
+`ActionName`, which drops the `Async` suffix).
 
 ### Constants (named, no magic strings – Principle VI)
 
 | Constant | Value | Where |
 |---|---|---|
 | id route parameter / error key | `id` | `PaymentsController` |
-| invalid-id message | `The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6.` | `UnreadableRequestHandler` |
+| invalid-id message | `The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6.` | `PaymentResultMapper` |
 | not-found title / detail | `Payment not found` / `No payment exists with the given id.` | `PaymentResultMapper` |
 
 ## Composition (`Program.cs`)

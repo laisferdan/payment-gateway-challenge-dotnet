@@ -16,4 +16,9 @@ public sealed class InMemoryPaymentRepository : IPaymentRepository
     {
         _payments[payment.Id] = payment;
     }
+
+    public Payment? GetById(Guid id)
+    {
+        return _payments.TryGetValue(id, out Payment? payment) ? payment : null;
+    }
 }

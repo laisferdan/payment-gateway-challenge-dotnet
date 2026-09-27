@@ -42,6 +42,7 @@ builder.Services.AddOptions<AcquiringBankOptions>()
 builder.Services.AddSingleton<IPaymentRepository, InMemoryPaymentRepository>();
 builder.Services.AddSingleton<PaymentGatewayMetrics>();
 builder.Services.AddScoped<ProcessPaymentService>();
+builder.Services.AddScoped<RetrievePaymentService>();
 builder.Services.AddSingleton<PaymentResultMapper>();
 
 builder.Services.AddHttpClient<IAcquiringBank, AcquiringBankClient>((services, client) =>

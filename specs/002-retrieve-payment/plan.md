@@ -118,10 +118,9 @@ src/PaymentGateway.Api/
 └── Http/
     ├── PaymentsController.cs             ~ + GET {id} (Guid, no :guid constraint; XML docs;
     │                                     #   ProducesResponseType 200/400/404/500)
-    ├── PaymentResultMapper.cs            ~ Found → 200, NotFound → 404; + the invalid-id body
-    └── UnreadableRequestHandler.cs       ~ invalid-model response on the retrieval action → invalid
-                                          #   id (fixed message, no paymentStatus) + log
-                                          #   PaymentIdInvalid (3002)
+    └── PaymentResultMapper.cs            ~ Found → 200, NotFound → 404; + the invalid-id branch in
+                                          #   ToUnreadableBodyResult for the retrieval action (fixed
+                                          #   message, no paymentStatus) + log PaymentIdInvalid (3002)
 
 test/PaymentGateway.Api.Tests/
 ├── Unit/

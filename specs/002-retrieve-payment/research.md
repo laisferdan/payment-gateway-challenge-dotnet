@@ -70,10 +70,10 @@ rule and the card-number-in-path/body log test (UC1 research R3, R5, R15). UC2 r
   `title` "Invalid payment id", `errors: { "id": ["The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6."] }`,
   `traceId`, and **no `paymentStatus`** member.
   - **Mechanism**: binding failure → `[ApiController]` automatic `400` →
-    `ApiBehaviorOptions.InvalidModelStateResponseFactory` → `UnreadableRequestHandler`. UC1 already
-    makes the factory action-aware (UC1 R3, identified by
+    `ApiBehaviorOptions.InvalidModelStateResponseFactory` → `PaymentResultMapper.ToUnreadableBodyResult`.
+    UC1 already makes this method action-aware (UC1 R3, identified by
     `ControllerActionDescriptor.MethodInfo.Name`): `paymentStatus: "Rejected"` only for the
-    processing action, a plain `ValidationProblemDetails` for any other. UC2 adds one case: for
+    processing action, a plain `ValidationProblemDetails` for any other. UC2 adds one branch: for
     the **retrieval** action the mapper uses the title "Invalid payment id" and the fixed `id`
     message below, and logs `PaymentIdInvalid` (R8).
   - **Message**: a fixed text that **never echoes the submitted value** – a merchant may paste
@@ -145,7 +145,7 @@ rule and the card-number-in-path/body log test (UC1 research R3, R5, R15). UC2 r
   |---|---|---|---|
   | 3000 | `PaymentRetrieved` | `paymentId`, `status` | `RetrievePaymentService` |
   | 3001 | `PaymentNotFound` | `paymentId` (the parsed GUID) | `RetrievePaymentService` |
-  | 3002 | `PaymentIdInvalid` | – (the raw value is **never** logged) | `Http/` – the invalid-model response factory, via an `ILogger` resolved from the request services |
+  | 3002 | `PaymentIdInvalid` | – (the raw value is **never** logged) | `Http/PaymentResultMapper.ToUnreadableBodyResult`, via its constructor-injected `ILogger<PaymentResultMapper>` |
 
   **No retrieval metric** (Q5); `PaymentGatewayMetrics` is unchanged. Logging a not-found id is
   safe (it is a parsed GUID and cannot carry card data) and is what enumeration monitoring – a
