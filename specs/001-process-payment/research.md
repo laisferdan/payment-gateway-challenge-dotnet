@@ -431,8 +431,13 @@ report needed – R12).
     (`AcquiringBank__BaseUrl`, `Swagger__Enabled`). `appsettings.json` holds the local simulator
     URL (`http://localhost:8080`) and `Swagger:Enabled=false`; `appsettings.Development.json`
     sets `Swagger:Enabled=true` for local runs.
-  - **No HTTPS redirection**: `UseHttpsRedirection()` is removed; TLS is terminated upstream
-    (load balancer / ingress) – a documented assumption. `UseAuthorization()` is removed too
+  - **HTTPS redirection only where HTTPS exists**: `UseHttpsRedirection()` is kept. The launch
+    profile listens on `https://localhost:7092` and `http://localhost:5067`, so local HTTP requests
+    are redirected (`307`); this needs the developer certificate (`dotnet dev-certs https`) or
+    startup fails. The container listens on HTTP only – TLS is terminated upstream (load balancer /
+    ingress), a documented assumption – so the middleware finds no HTTPS port, logs one warning and
+    serves HTTP. A redirect does not protect a `POST`: its card data has already crossed plain HTTP,
+    so clients must call the HTTPS address directly. `UseAuthorization()` is removed
     (authentication is out of scope). The container never sets
     `ASPNETCORE_ENVIRONMENT=Development` (that would enable the developer exception page), so
     Swagger is turned on only by the flag.

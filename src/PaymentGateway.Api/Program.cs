@@ -7,9 +7,7 @@ using PaymentGateway.Api.Application;
 using PaymentGateway.Api.Http;
 using PaymentGateway.Api.Infrastructure;
 
-// Hosting diagnostics logging is off (appsettings.json) because its request scope would print the
-// request path – which may hold a pasted card number – on every entry. The host then starts a
-// request Activity (and so a trace id) only when its ActivitySource has a listener.
+// Hosting diagnostics logging is off (card numbers in paths), so this listener is what gives requests a trace id.
 ActivitySource.AddActivityListener(new ActivityListener
 {
     ShouldListenTo = source => source.Name == "Microsoft.AspNetCore",
@@ -18,13 +16,10 @@ ActivitySource.AddActivityListener(new ActivityListener
 
 var builder = WebApplication.CreateBuilder(args);
 
-// JSON lines with scopes, so every entry carries the request's TraceId. No HTTP request logging:
-// request paths and bodies can contain a pasted card number (Constitution VIII).
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
 
-// A body that cannot be read already reports its own error; the implicit [Required] on the
-// request parameter would only add "The request field is required." next to it.
+// Avoids a duplicate "request field is required" error next to the unreadable-body error.
 builder.Services.AddControllers(options => options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = context =>
@@ -35,7 +30,6 @@ builder.Services.AddSwaggerGen(options =>
     options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml"));
     options.SchemaFilter<PaymentRuleSchemaFilter>();
 });
-// Liveness only: the acquiring bank is not checked, so a bank outage does not make the gateway look dead.
 builder.Services.AddHealthChecks();
 
 builder.Services.AddSingleton(TimeProvider.System);
@@ -50,7 +44,6 @@ builder.Services.AddSingleton<PaymentGatewayMetrics>();
 builder.Services.AddScoped<ProcessPaymentService>();
 builder.Services.AddSingleton<PaymentResultMapper>();
 
-// One call per payment: no retry or resilience handlers (a payment request is not idempotent).
 builder.Services.AddHttpClient<IAcquiringBank, AcquiringBankClient>((services, client) =>
 {
     AcquiringBankOptions options = services.GetRequiredService<IOptions<AcquiringBankOptions>>().Value;
@@ -58,18 +51,15 @@ builder.Services.AddHttpClient<IAcquiringBank, AcquiringBankClient>((services, c
     client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
 });
 
-// The same 32-hex trace id the log scope uses (the framework default is the longer W3C id).
 builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
     context.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString());
 
 var app = builder.Build();
 
 app.UseExceptionHandler();
-// Body-less errors from routing (unknown route, wrong method) become ProblemDetails too.
 app.UseStatusCodePages();
+app.UseHttpsRedirection();
 
-// Swagger is switched on by configuration, never by the Development environment, which would also
-// enable the developer exception page in a container.
 if (app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();

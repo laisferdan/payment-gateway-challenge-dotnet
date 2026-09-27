@@ -124,7 +124,8 @@ src/PaymentGateway.Api/
 │                                         #   singletons (repository, metrics, TimeProvider.System),
 │                                         #   JSON console logging with scopes, AddHealthChecks +
 │                                         #   MapHealthChecks("/health"), Swagger when Swagger:Enabled;
-│                                         #   no UseHttpsRedirection; `public partial class Program`
+│                                         #   UseHttpsRedirection (HTTP only when no HTTPS port);
+│                                         #   `public partial class Program`
 ├── appsettings.json                      # AcquiringBank (BaseUrl, TimeoutSeconds), Swagger:Enabled=false,
 │                                         #   LogLevel Microsoft.AspNetCore + System.Net.Http.HttpClient = Warning
 ├── appsettings.Development.json          # Swagger:Enabled=true
@@ -203,8 +204,8 @@ test/PaymentGateway.Api.Tests/            # the template project, reused
 **Removed from the template** (research R11): `test/PaymentGateway.Api.Tests/PaymentsControllerTests.cs`
 and `Usings.cs` if unused; `src/PaymentGateway.Api/Enums/`, `Services/` and `Models/` (numeric
 card fields, a repository storing the HTTP DTO); `Controllers/` (the controller moves to `Http/`)
-and the template `GET` action (retrieval is re-delivered by UC2); `UseHttpsRedirection()` and
-`UseAuthorization()` (no auth in scope). The test project's packages are upgraded
+and the template `GET` action (retrieval is re-delivered by UC2); `UseAuthorization()` (no auth
+in scope). The test project's packages are upgraded
 (`Microsoft.AspNetCore.Mvc.Testing` 6.0.24 → 8.0.x, xunit, Test SDK, coverlet.collector).
 
 **Structure Decision**: one production project and one test project, as required by
@@ -244,7 +245,7 @@ A final "How this was built" section links to `specs/` and `.specify/memory/cons
 
 ## `.http` file
 
-`src/PaymentGateway.Api/PaymentGateway.Api.http`, with `@base = http://localhost:5067` (switch to
+`src/PaymentGateway.Api/PaymentGateway.Api.http`, with `@base = https://localhost:7092` (switch to
 `http://localhost:8090` for compose) and one request each for: **Authorized** (card ending 7),
 **Declined** (card ending 8), **Rejected** (card `1234`, currency `gbp`, amount `0`),
 **Bank unavailable** (card ending 0), plus `GET {{base}}/health`.

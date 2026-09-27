@@ -29,7 +29,7 @@ dotnet test --filter "Category=E2E"
 
 ## 2. Manual scenarios
 
-Start the gateway (UC1 quickstart §3 or §4). `{{base}}` is `http://localhost:5067` (local) or
+Start the gateway (UC1 quickstart §3 or §4). `{{base}}` is `https://localhost:7092` (local) or
 `http://localhost:8090` (compose). The `.http` file contains the same requests.
 
 First process a payment and keep its id:

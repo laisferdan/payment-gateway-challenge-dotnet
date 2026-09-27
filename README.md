@@ -26,12 +26,13 @@ Requires the .NET 8 SDK and Docker (for the bank simulator).
 
 ```bash
 docker compose up -d bank_simulator              # simulator on http://localhost:8080
-dotnet run --project src/PaymentGateway.Api      # gateway on http://localhost:5067
+dotnet run --project src/PaymentGateway.Api      # gateway on https://localhost:7092 (http://localhost:5067 redirects)
 ```
 
-- Swagger UI: <http://localhost:5067/swagger> (enabled by `Swagger:Enabled=true` in
+- HTTPS needs the ASP.NET Core developer certificate once: `dotnet dev-certs https --trust`.
+- Swagger UI: <https://localhost:7092/swagger> (enabled by `Swagger:Enabled=true` in
   `appsettings.Development.json`)
-- Health: `curl http://localhost:5067/health` → `200 Healthy`
+- Health: `curl https://localhost:7092/health` → `200 Healthy`
 
 ## 3. Run with Docker
 
@@ -138,7 +139,7 @@ Requests are also in [`src/PaymentGateway.Api/PaymentGateway.Api.http`](src/Paym
 the full contract is in Swagger (`/swagger`).
 
 ```bash
-curl -i -X POST http://localhost:5067/api/payments -H "Content-Type: application/json" -d '{
+curl -i -X POST https://localhost:7092/api/payments -H "Content-Type: application/json" -d '{
   "cardNumber": "2222405343248877", "expiryMonth": 12, "expiryYear": 2030,
   "currency": "GBP", "amount": 1050, "cvv": "123"
 }'
@@ -232,7 +233,10 @@ not make the gateway look dead.
 - **Storage** is in memory, as the assessment allows: payments are lost on restart. Concurrency safety
   comes from an immutable `Payment` in a `ConcurrentDictionary`; there is no stress test.
 - **Single project** with hexagonal folders (`Domain`, `Application`, `Infrastructure`, `Http`).
-- **TLS is terminated upstream**: no HTTPS redirection in the container.
+- **TLS is terminated upstream**: the container listens on HTTP only, so `UseHttpsRedirection()` finds
+  no HTTPS port there and serves HTTP. Locally the launch profile adds `https://localhost:7092` and HTTP
+  requests are redirected (`307`). A redirect does not protect a `POST`: its card data has already
+  crossed plain HTTP, so clients must call the HTTPS address directly.
 - **Swagger is enabled by a flag**, never by the Development environment (which would also enable the
   developer exception page).
 - **Latency (95 % under 2 s)** is checked manually with `curl -w "%{time_total}"`, and observed in

@@ -1,7 +1,7 @@
 # Payment Gateway – example requests (VS Code REST Client, Rider, Visual Studio).
 # Local run: dotnet run --project src/PaymentGateway.Api (simulator: docker compose up -d bank_simulator)
 # With Docker Compose use: @base = http://localhost:8090
-@base = http://localhost:5067
+@base = https://localhost:7092
 
 ### Authorized – the simulator authorizes cards ending in an odd digit
 POST {{base}}/api/payments

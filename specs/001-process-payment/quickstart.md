@@ -42,12 +42,13 @@ dotnet test --filter "Category=E2E"
 
 ```bash
 docker compose up -d bank_simulator              # simulator on http://localhost:8080
-dotnet run --project src/PaymentGateway.Api      # http://localhost:5067 (launch profile)
+dotnet run --project src/PaymentGateway.Api      # https://localhost:7092 (launch profile; http://localhost:5067 redirects)
 ```
 
-- Swagger UI: `http://localhost:5067/swagger` (enabled by `Swagger:Enabled=true` in
+- HTTPS needs the ASP.NET Core developer certificate once: `dotnet dev-certs https --trust`.
+- Swagger UI: `https://localhost:7092/swagger` (enabled by `Swagger:Enabled=true` in
   `appsettings.Development.json`).
-- Health: `curl http://localhost:5067/health` → `200 Healthy`.
+- Health: `curl https://localhost:7092/health` → `200 Healthy`.
 - Logs: JSON lines on the console, one per payment outcome and one per bank call, each with a
   `TraceId` scope.
 
@@ -66,7 +67,7 @@ docker compose up --build
 ## 5. Manual scenarios
 
 Use the requests in `src/PaymentGateway.Api/PaymentGateway.Api.http` (VS Code REST Client,
-Rider or Visual Studio), or `curl`. `{{base}}` is `http://localhost:5067` (local) or
+Rider or Visual Studio), or `curl`. `{{base}}` is `https://localhost:7092` (local) or
 `http://localhost:8090` (compose). Expiry `12/2030` is in the future.
 
 | # | Scenario | Request change (vs. valid body below) | Expected |
