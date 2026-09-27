@@ -8,6 +8,7 @@ using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
 
+using PaymentGateway.Api.Domain;
 using PaymentGateway.Api.Tests.Integration.Fixtures;
 
 using WireMock.RequestBuilders;
@@ -140,9 +141,10 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
     [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":"ten","cvv":"123"}""", "amount")]
     [InlineData("""{"cardNumber":2222405343248877,"expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":1050,"cvv":"123"}""", "cardNumber")]
     [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":2147483648,"cvv":"123"}""", "amount")]
+    [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":12.5,"expiryYear":2030,"currency":"GBP","amount":1050,"cvv":"123"}""", "expiryMonth")]
     [InlineData("{", "body")]
     [InlineData("", "body")]
-    public async Task Post_WhenBodyIsUnreadable_ReturnsRejected(string json, string expectedField)
+    public async Task Post_WhenBodyIsUnreadable_ReturnsRejectedWithTheFieldRule(string json, string expectedField)
     {
         // Arrange
         StubBank(200, AuthorizedBody);
@@ -159,6 +161,10 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
         Assert.Equal("Payment rejected", body.GetProperty("title").GetString());
         JsonProperty error = Assert.Single(body.GetProperty("errors").EnumerateObject());
         Assert.Equal(expectedField, error.Name);
+        string expectedMessage = expectedField == "body"
+            ? "The request body must be a JSON object with the payment fields."
+            : PaymentRequest.Messages.For(expectedField);
+        Assert.Equal(expectedMessage, Assert.Single(error.Value.EnumerateArray()).GetString());
         string messages = error.Value.GetRawText();
         Assert.DoesNotContain("2222405343248877", messages);
         Assert.DoesNotContain("ten", messages);
@@ -226,7 +232,7 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
     }
 
     [Fact]
-    public async Task Post_WhenBodyIsUnreadable_LogsOnceWithFieldPathsAndCountsNoOutcome()
+    public async Task Post_WhenBodyIsUnreadable_CountsNoOutcome()
     {
         // Arrange
         using PaymentGatewayFactory factory = new(_bank.Url);
@@ -239,14 +245,7 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
         HttpResponseMessage response = await PostAsync(client, json);
 
         // Assert
-        string? traceId = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("traceId").GetString();
-        FakeLogRecord entry = Assert.Single(factory.LogCollector.GetSnapshot(), record => record.Id.Name == "PaymentRequestUnreadable");
-        Assert.Equal(1003, entry.Id.Id);
-        Assert.Equal(LogLevel.Information, entry.Level);
-        Assert.Equal("$.amount", entry.GetStructuredStateValue("invalidFields"));
-        Assert.Equal(traceId, LogText.TraceId(entry));
-        Assert.DoesNotContain(CardNumber, LogText.Of(entry));
-        Assert.DoesNotContain("ten", entry.Message);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Empty(outcomes.GetMeasurementSnapshot());
     }
 

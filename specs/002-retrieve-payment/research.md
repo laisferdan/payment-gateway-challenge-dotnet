@@ -70,7 +70,7 @@ rule and the card-number-in-path/body log test (UC1 research R3, R5, R15). UC2 r
   `title` "Invalid payment id", `errors: { "id": ["The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6."] }`,
   `traceId`, and **no `paymentStatus`** member.
   - **Mechanism**: binding failure → `[ApiController]` automatic `400` →
-    `ApiBehaviorOptions.InvalidModelStateResponseFactory` → `PaymentResultMapper`. UC1 already
+    `ApiBehaviorOptions.InvalidModelStateResponseFactory` → `UnreadableRequestHandler`. UC1 already
     makes the factory action-aware (UC1 R3, identified by
     `ControllerActionDescriptor.MethodInfo.Name`): `paymentStatus: "Rejected"` only for the
     processing action, a plain `ValidationProblemDetails` for any other. UC2 adds one case: for

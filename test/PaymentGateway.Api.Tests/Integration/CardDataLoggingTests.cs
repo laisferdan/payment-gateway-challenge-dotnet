@@ -72,7 +72,6 @@ public class CardDataLoggingTests : IClassFixture<WireMockBankFixture>
         await client.PostAsync("/api/payments", new StringContent(json, Encoding.UTF8, "application/json"));
 
         // Assert
-        Assert.NotEmpty(factory.LogCollector.GetSnapshot());
         Assert.DoesNotContain(factory.LogCollector.GetSnapshot(), record => LogText.Of(record).Contains(CardNumber) || LogText.Of(record).Contains(Cvv));
     }
 

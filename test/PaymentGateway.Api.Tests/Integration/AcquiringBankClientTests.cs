@@ -43,7 +43,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
         IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
 
         // Act
-        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest, CancellationToken.None);
+        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest);
 
         // Assert
         Assert.IsType(expected, result);
@@ -58,7 +58,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
         IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
 
         // Act
-        await client.RequestAuthorizationAsync(ValidRequest, CancellationToken.None);
+        await client.RequestAuthorizationAsync(ValidRequest);
 
         // Assert
         IRequestMessage message = Assert.Single(_bank.Server.LogEntries).RequestMessage!;
@@ -87,7 +87,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
         IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
 
         // Act
-        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest, CancellationToken.None);
+        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest);
 
         // Assert
         Assert.Equal(expected, Assert.IsType<BankAuthorizationResult.Failed>(result).Kind);
@@ -104,7 +104,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
         IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
 
         // Act
-        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest, CancellationToken.None);
+        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest);
 
         // Assert
         Assert.Equal(BankFailureKind.Unavailable, Assert.IsType<BankAuthorizationResult.Failed>(result).Kind);
@@ -118,32 +118,10 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
         IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
 
         // Act
-        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest, CancellationToken.None);
+        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest);
 
         // Assert
         Assert.Equal(BankFailureKind.Unavailable, Assert.IsType<BankAuthorizationResult.Failed>(result).Kind);
-    }
-
-    [Fact]
-    public async Task RequestAuthorization_WhenCallerCancels_PropagatesCancellation()
-    {
-        // Arrange
-        using WireMockBankFixture slowBank = new();
-        StubBank(slowBank, 200, """{"authorized":true,"authorization_code":"abc"}""", TimeSpan.FromSeconds(3));
-        using HttpClient httpClient = new() { BaseAddress = new Uri(slowBank.Url) };
-        using ServiceProvider services = new ServiceCollection().AddMetrics().BuildServiceProvider();
-        AcquiringBankClient client = new(
-            httpClient,
-            TimeProvider.System,
-            new PaymentGatewayMetrics(services.GetRequiredService<IMeterFactory>()),
-            new FakeLogger<AcquiringBankClient>());
-        using CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(200));
-
-        // Act
-        Exception? exception = await Record.ExceptionAsync(() => client.RequestAuthorizationAsync(ValidRequest, cancellation.Token));
-
-        // Assert
-        Assert.IsAssignableFrom<OperationCanceledException>(exception);
     }
 
     [Theory]
@@ -162,7 +140,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
             factory.Services.GetRequiredService<IMeterFactory>(), "PaymentGateway", "paymentgateway.bank.request.duration");
 
         // Act
-        await client.RequestAuthorizationAsync(ValidRequest, CancellationToken.None);
+        await client.RequestAuthorizationAsync(ValidRequest);
 
         // Assert
         FakeLogRecord entry = Assert.Single(factory.LogCollector.GetSnapshot(), record => record.Category == typeof(AcquiringBankClient).FullName);

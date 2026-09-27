@@ -2,10 +2,6 @@ using System.Diagnostics;
 
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Abstractions;
-using Microsoft.AspNetCore.Mvc.Controllers;
-using Microsoft.AspNetCore.Mvc.ModelBinding;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using PaymentGateway.Api.Application;
@@ -13,7 +9,7 @@ using PaymentGateway.Api.Domain;
 
 namespace PaymentGateway.Api.Http;
 
-public sealed partial class PaymentResultMapper
+public sealed class PaymentResultMapper
 {
     private const string ProblemJson = "application/problem+json";
     private const string BadRequestType = "https://tools.ietf.org/html/rfc9110#section-15.5.1";
@@ -21,19 +17,15 @@ public sealed partial class PaymentResultMapper
     private const string BankFailureTitle = "Payment could not be processed";
     private const string BadGatewayType = "https://tools.ietf.org/html/rfc9110#section-15.6.3";
     private const string ServiceUnavailableType = "https://tools.ietf.org/html/rfc9110#section-15.6.4";
-    private const string InvalidRequestTitle = "Invalid request";
     private const string BodyField = "body";
-    private const string JsonPathRoot = "$";
-    private const string UnreadableValueMessage = "The value could not be read: check its type and format.";
-    private const string UnreadableBodyMessage = "The request body could not be read as a payment request.";
+    private const string JsonPathPrefix = "$.";
+    private const string UnreadableBodyMessage = "The request body must be a JSON object with the payment fields.";
 
     private readonly ProblemDetailsOptions _problemDetailsOptions;
-    private readonly ILogger<PaymentResultMapper> _logger;
 
-    public PaymentResultMapper(IOptions<ProblemDetailsOptions> problemDetailsOptions, ILogger<PaymentResultMapper> logger)
+    public PaymentResultMapper(IOptions<ProblemDetailsOptions> problemDetailsOptions)
     {
         _problemDetailsOptions = problemDetailsOptions.Value;
-        _logger = logger;
     }
 
     public IActionResult ToActionResult(ProcessPaymentResult result, HttpContext httpContext)
@@ -48,78 +40,30 @@ public sealed partial class PaymentResultMapper
     }
 
     /// <summary>
-    /// The response for a request whose body or parameters could not be bound. Only the payment
-    /// processing action answers with a Rejected payment (<c>paymentStatus</c>); any other action
-    /// gets a plain validation problem. Messages are fixed: the submitted values are never echoed.
+    /// The <c>InvalidModelStateResponseFactory</c>: a body that could not be read is Rejected like any
+    /// other invalid payment. A value of the wrong type gets its field's rule message; malformed JSON
+    /// or an empty body gets one <c>body</c> error. The submitted values are never echoed.
     /// </summary>
-    public IActionResult ToInvalidModelStateResult(ActionContext context)
+    public IActionResult ToUnreadableBodyResult(ActionContext context)
     {
-        IDictionary<string, string[]> errors = ToUnreadableErrors(context.ModelState);
-        if (IsProcessPaymentAction(context.ActionDescriptor))
-        {
-            // The use case never ran, so it could not log this Rejected outcome. Not counted in
-            // the PaymentGateway meter: it shows as a 400 in http.server.request.duration.
-            LogPaymentRequestUnreadable(_logger, string.Join(",", ToUnreadablePaths(context.ModelState)));
-            return Rejected(errors, context.HttpContext);
-        }
-
-        ValidationProblemDetails problem = new(errors)
-        {
-            Type = BadRequestType,
-            Title = InvalidRequestTitle,
-            Status = StatusCodes.Status400BadRequest,
-        };
-        return Problem(problem, context.HttpContext);
-    }
-
-    // MethodInfo.Name, not ActionName: MVC drops the "Async" suffix from action names.
-    private static bool IsProcessPaymentAction(ActionDescriptor descriptor)
-    {
-        return descriptor is ControllerActionDescriptor { MethodInfo.Name: nameof(PaymentsController.ProcessPaymentAsync) };
-    }
-
-    // Binding paths only (e.g. "$.amount"), never the submitted values.
-    private static IEnumerable<string> ToUnreadablePaths(ModelStateDictionary modelState)
-    {
-        List<string> keys = modelState
+        List<ValidationError> errors = context.ModelState
             .Where(entry => entry.Value is { Errors.Count: > 0 })
-            .Select(entry => entry.Key.Length == 0 ? JsonPathRoot : entry.Key)
+            .Select(entry => ToValidationError(entry.Key))
+            .DistinctBy(error => error.Field)
             .ToList();
-        return keys.Count > 1 ? keys.Where(key => ToField(key) != BodyField) : keys;
+        return ToActionResult(new ProcessPaymentResult.Rejected(errors), context.HttpContext);
     }
 
-    private static Dictionary<string, string[]> ToUnreadableErrors(ModelStateDictionary modelState)
+    // "$.amount" → the amount rule; "$" or "" (malformed JSON, empty body) → the whole body.
+    private static ValidationError ToValidationError(string modelStateKey)
     {
-        List<string> fields = modelState
-            .Where(entry => entry.Value is { Errors.Count: > 0 })
-            .Select(entry => ToField(entry.Key))
-            .Distinct()
-            .ToList();
-
-        // The framework also reports the whole parameter as missing when a field fails to bind;
-        // that entry only adds noise next to the field error.
-        if (fields.Count > 1)
-        {
-            fields.Remove(BodyField);
-        }
-
-        return fields.ToDictionary(
-            field => field,
-            field => new[] { field == BodyField ? UnreadableBodyMessage : UnreadableValueMessage });
-    }
-
-    // "$.amount" → "amount"; "$", "" or the parameter name → "body".
-    private static string ToField(string modelStateKey)
-    {
-        const string pathPrefix = JsonPathRoot + ".";
-        if (!modelStateKey.StartsWith(pathPrefix, StringComparison.Ordinal))
-        {
-            return BodyField;
-        }
-
-        string path = modelStateKey[pathPrefix.Length..];
-        int end = path.IndexOfAny(['.', '[']);
-        return end < 0 ? path : path[..end];
+        string? field = modelStateKey.StartsWith(JsonPathPrefix, StringComparison.Ordinal)
+            ? PaymentRequest.Fields.All.FirstOrDefault(name =>
+                string.Equals(name, modelStateKey[JsonPathPrefix.Length..], StringComparison.OrdinalIgnoreCase))
+            : null;
+        return field is null
+            ? new ValidationError(BodyField, UnreadableBodyMessage)
+            : new ValidationError(field, PaymentRequest.Messages.For(field));
     }
 
     private IActionResult Rejected(IDictionary<string, string[]> errors, HttpContext httpContext)
@@ -176,8 +120,4 @@ public sealed partial class PaymentResultMapper
             .GroupBy(error => error.Field)
             .ToDictionary(group => group.Key, group => group.Select(error => error.Message).ToArray());
     }
-
-    [LoggerMessage(EventId = 1003, EventName = "PaymentRequestUnreadable", Level = LogLevel.Information,
-        Message = "Payment rejected: unreadable {invalidFields}")]
-    private static partial void LogPaymentRequestUnreadable(ILogger logger, string invalidFields);
 }

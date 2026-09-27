@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
 
+using PaymentGateway.Api.Domain;
+using PaymentGateway.Api.Http;
 using PaymentGateway.Api.Tests.Integration.Fixtures;
 
 namespace PaymentGateway.Api.Tests.Integration;
@@ -93,7 +95,7 @@ public class OpenApiDocumentTests : IClassFixture<WireMockBankFixture>
     [InlineData("amount")]
     [InlineData("expiryMonth")]
     [InlineData("expiryYear")]
-    public async Task PostPaymentRequest_EachField_HasItsRuleAsDescription(string field)
+    public async Task PostPaymentRequest_EachField_HasTheDomainRuleAsDescription(string field)
     {
         // Arrange
         JsonElement document = await GetDocumentAsync();
@@ -103,8 +105,8 @@ public class OpenApiDocumentTests : IClassFixture<WireMockBankFixture>
             .GetProperty("properties").GetProperty(field);
 
         // Assert
-        Assert.True(property.TryGetProperty("description", out JsonElement description), $"{field} has no description.");
-        Assert.False(string.IsNullOrWhiteSpace(description.GetString()));
+        string expected = PaymentRuleSchemaFilter.RequiredPrefix + PaymentRequest.Messages.For(field);
+        Assert.StartsWith(expected, property.GetProperty("description").GetString());
     }
 
     private async Task<JsonElement> GetDocumentAsync()

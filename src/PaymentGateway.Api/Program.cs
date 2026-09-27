@@ -23,13 +23,18 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
 
-builder.Services.AddControllers()
+// A body that cannot be read already reports its own error; the implicit [Required] on the
+// request parameter would only add "The request field is required." next to it.
+builder.Services.AddControllers(options => options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = context =>
-        context.HttpContext.RequestServices.GetRequiredService<PaymentResultMapper>().ToInvalidModelStateResult(context));
+        context.HttpContext.RequestServices.GetRequiredService<PaymentResultMapper>().ToUnreadableBodyResult(context));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
-    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml")));
+{
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml"));
+    options.SchemaFilter<PaymentRuleSchemaFilter>();
+});
 // Liveness only: the acquiring bank is not checked, so a bank outage does not make the gateway look dead.
 builder.Services.AddHealthChecks();
 

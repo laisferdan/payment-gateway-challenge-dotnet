@@ -26,7 +26,7 @@ public sealed partial class ProcessPaymentService
         _metrics = metrics;
     }
 
-    public async Task<ProcessPaymentResult> ProcessAsync(ProcessPaymentCommand command, CancellationToken cancellationToken)
+    public async Task<ProcessPaymentResult> ProcessAsync(ProcessPaymentCommand command)
     {
         DateOnly today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
         CreatePaymentRequestResult validation = PaymentRequest.Create(
@@ -38,7 +38,7 @@ public sealed partial class ProcessPaymentService
             return new ProcessPaymentResult.Rejected(validation.Errors);
         }
 
-        BankAuthorizationResult decision = await _acquiringBank.RequestAuthorizationAsync(request, cancellationToken);
+        BankAuthorizationResult decision = await _acquiringBank.RequestAuthorizationAsync(request);
 
         if (decision is BankAuthorizationResult.Failed failure)
         {

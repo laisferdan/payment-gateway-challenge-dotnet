@@ -246,7 +246,7 @@ the first test that needs it.
   Red (does not compile: the application types do not exist yet). `test:`
 - [X] T038 [UC1] Create, with XML docs on the ports (Constitution X):
   `src/Application/IAcquiringBank.cs`
-  (`Task<BankAuthorizationResult> RequestAuthorizationAsync(PaymentRequest, CancellationToken)`),
+  (`Task<BankAuthorizationResult> RequestAuthorizationAsync(PaymentRequest)`),
   `src/Application/BankAuthorizationResult.cs` (`Authorized` | `Declined`),
   `src/Application/IPaymentRepository.cs` (`void Add(Payment payment)` only),
   `src/Application/ProcessPaymentCommand.cs` (nullable raw values),
@@ -299,12 +299,9 @@ answer (research R4, R6), tested against WireMock through the real DI setup.
   **unused local port** (`http://127.0.0.1:<port>`, the port obtained by binding a `TcpListener`
   to port 0 and releasing it) – the shared WireMock server is never stopped; `400`, `500` →
   `Failed(Error)`; body `not json`, body without `authorized`, `authorized: true` with empty
-  `authorization_code` → `Error`; every WireMock case makes exactly **one** request. Plus
-  `RequestAuthorization_WhenCallerCancels_PropagatesCancellation` – the **only** case that
-  constructs `AcquiringBankClient` directly (over an `HttpClient` to WireMock) and passes a
-  cancelled token → `OperationCanceledException`, not `Unavailable`. Red. `test:`
+  `authorization_code` → `Error`; every WireMock case makes exactly **one** request. Red. `test:`
 - [X] T048 [UC1] Implement the classification in `AcquiringBankClient` (research R4/R6: shape check;
-  timeout = `OperationCanceledException` while the caller's token is not cancelled;
+  timeout = `OperationCanceledException` from `HttpClient.Timeout`;
   `HttpRequestException` → Unavailable; any other non-200 → Error). Green for T047. `feat:`
 - [X] T049 [P] [UC1] Write `test/Unit/Infrastructure/BankPaymentRequestTests.cs`:
   `ToString_Always_MasksCardNumberAndOmitsCvv`. Red. `test:`

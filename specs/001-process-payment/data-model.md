@@ -64,9 +64,11 @@ Depends on nothing but the BCL.
 
 ### PaymentStatus (enum)
 
-`Authorized`, `Declined`, `Rejected`. `Authorized` and `Declined` are the bank's decision and the
-only statuses a recorded `Payment` has; `Rejected` is returned in the `400` body only – a rejected
-request never becomes a `Payment` (FR-012).
+| Status | When | Recorded as a `Payment` |
+|---|---|---|
+| `Authorized` | the bank authorized the payment | yes (FR-015) |
+| `Declined` | the bank declined the payment | yes (FR-015) |
+| `Rejected` | the gateway refused invalid information – any `PaymentRequest` rule broken, e.g. an amount below `MinAmount` (FR-008); the bank is not called | no – returned in the `400` body only (FR-011, FR-012) |
 
 ### Payment (entity – recorded)
 
@@ -91,7 +93,7 @@ There is **no use-case interface**: the controller depends on the concrete servi
 
 ### ProcessPaymentService (application service – UC1)
 
-`ProcessAsync(ProcessPaymentCommand command, CancellationToken ct) → ProcessPaymentResult`
+`ProcessAsync(ProcessPaymentCommand command) → ProcessPaymentResult`
 
 Dependencies: `IAcquiringBank`, `IPaymentRepository`, `TimeProvider`, `PaymentGatewayMetrics`,
 `ILogger<ProcessPaymentService>`.
@@ -117,7 +119,7 @@ Returned by `IAcquiringBank` and carried by `ProcessPaymentResult.BankFailed`.
 
 ### Driven port – `IAcquiringBank` (XML-documented)
 
-`RequestAuthorizationAsync(PaymentRequest request, CancellationToken ct) → BankAuthorizationResult`
+`RequestAuthorizationAsync(PaymentRequest request) → BankAuthorizationResult`
 
 `BankAuthorizationResult`: `Authorized` · `Declined` · `Failed(BankFailureKind)`.
 
@@ -155,7 +157,7 @@ command ──► PaymentRequest.Create(…, today from TimeProvider)
 | 1000 | `PaymentProcessed` | Information | `paymentId`, `status`, `currency`, `amount` |
 | 1001 | `PaymentRejected` | Information | `invalidFields` (names only) |
 | 1002 | `PaymentBankFailed` | Warning | `failureKind`, `currency`, `amount` |
-| 1003 | `PaymentRequestUnreadable` | Information | `invalidFields` (binding paths only, e.g. `$.amount`) – written by `PaymentResultMapper` for an unbindable `POST` body (research R3) |
+| 1003 | `PaymentRequestUnreadable` | Information | `invalidFields` (binding paths only, e.g. `$.amount`) – written by `UnreadableRequestHandler` for an unbindable `POST` body (research R3) |
 | 2000 | `BankCallCompleted` | Information | `durationMs`, `outcome` |
 | 2001 | `BankCallFailed` | Warning | `durationMs`, `failureKind`, `httpStatusCode?` |
 
@@ -204,17 +206,20 @@ Controllers and DTOs are XML-documented (they feed OpenAPI).
 - **PostPaymentRequest**: nullable members mirroring `ProcessPaymentCommand`; `ToString()`
   overridden to mask card number and CVV; each property's XML comment states its validation rule
   so the OpenAPI document shows the field constraints (research R12).
-- **PaymentResponse**: `id`, `status` (`Authorized`|`Declined`), `cardNumberLastFour`,
+- **PaymentResponse**: `id`, `status` (`PaymentStatus`; always `Authorized` or `Declined` here), `cardNumberLastFour`,
   `expiryMonth`, `expiryYear`, `currency`, `amount`. The single merchant-facing representation of
   a payment – returned by processing and, from UC2, by retrieval.
 - **PaymentRejectedProblemDetails** `: ValidationProblemDetails` – adds `paymentStatus`
-  (always `"Rejected"`); the body of every `400` of `POST /api/payments` (research R2).
+  (`PaymentStatus`, always `Rejected`); the body of every `400` of `POST /api/payments` (research R2).
 - **BankFailureProblemDetails** `: ProblemDetails` – adds `errorCode` (`bank_unavailable` |
   `bank_error`); the body of `503` / `502` (research R4).
 - **PaymentResultMapper**: the single place translating `ProcessPaymentResult` into
   `200` `PaymentResponse` / `400` `PaymentRejectedProblemDetails` / `502`–`503`
-  `BankFailureProblemDetails` (research R1, R2, R4, R5). It also builds the response for
-  unbindable payloads (used by `InvalidModelStateResponseFactory`, research R3):
+  `BankFailureProblemDetails` (research R1, R2, R4, R5). It builds every response body,
+  including the plain invalid-request `ValidationProblemDetails`.
+- **UnreadableRequestHandler**: the `InvalidModelStateResponseFactory` for unbindable payloads
+  (research R3). It turns the `ModelState` into field errors with fixed messages (never the
+  submitted values) and picks the response, which `PaymentResultMapper` builds:
   - failing action = the payment-processing action (identified by
     `ControllerActionDescriptor.MethodInfo.Name`) → `PaymentRejectedProblemDetails` (**with**
     `paymentStatus: "Rejected"`), and one `PaymentRequestUnreadable` log entry;

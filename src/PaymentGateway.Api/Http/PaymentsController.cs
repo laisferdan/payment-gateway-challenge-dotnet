@@ -27,11 +27,10 @@ public sealed class PaymentsController : ControllerBase
     /// number and CVV are never returned – only the last four digits.
     /// </remarks>
     /// <param name="request">The card payment.</param>
-    /// <param name="cancellationToken">Cancelled when the merchant disconnects.</param>
     /// <response code="200">The bank decided: <c>status</c> is Authorized or Declined.</response>
     /// <response code="400">
     /// Rejected – invalid information was supplied or the body could not be read. <c>paymentStatus</c>
-    /// is <c>Rejected</c> and <c>errors</c> lists every invalid field; the bank was not called.
+    /// is <c>Rejected</c> and <c>errors</c> maps each invalid field to its rule; the bank was not called.
     /// </response>
     /// <response code="502">Bank error (<c>errorCode</c> <c>bank_error</c>): retrying will not help. Nothing was recorded.</response>
     /// <response code="503">Bank unavailable (<c>errorCode</c> <c>bank_unavailable</c>): try again later. Nothing was recorded.</response>
@@ -42,9 +41,9 @@ public sealed class PaymentsController : ControllerBase
     [ProducesResponseType(typeof(BankFailureProblemDetails), StatusCodes.Status502BadGateway, ProblemJson)]
     [ProducesResponseType(typeof(BankFailureProblemDetails), StatusCodes.Status503ServiceUnavailable, ProblemJson)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError, ProblemJson)]
-    public async Task<IActionResult> ProcessPaymentAsync(PostPaymentRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> ProcessPaymentAsync(PostPaymentRequest request)
     {
-        ProcessPaymentResult result = await _processPaymentService.ProcessAsync(request.ToCommand(), cancellationToken);
+        ProcessPaymentResult result = await _processPaymentService.ProcessAsync(request.ToCommand());
         return _mapper.ToActionResult(result, HttpContext);
     }
 }

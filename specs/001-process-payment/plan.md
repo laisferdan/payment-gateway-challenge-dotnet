@@ -117,7 +117,7 @@ src/PaymentGateway.Api/
 ├── Program.cs                            # the only composition root: controllers + JSON options,
 │                                         #   AddProblemDetails (traceId) + UseExceptionHandler +
 │                                         #   UseStatusCodePages (routing 404/405 as ProblemDetails),
-│                                         #   InvalidModelStateResponseFactory → PaymentResultMapper
+│                                         #   InvalidModelStateResponseFactory → UnreadableRequestHandler
 │                                         #   (paymentStatus only for the processing action),
 │                                         #   no HttpLogging / W3C logging,
 │                                         #   typed HttpClient + AcquiringBankOptions (ValidateOnStart),
@@ -148,6 +148,7 @@ src/PaymentGateway.Api/
 │   └── PaymentGatewayMetrics.cs          # meter "PaymentGateway": outcomes counter, bank duration histogram
 ├── Infrastructure/
 │   ├── AcquiringBankClient.cs            # IAcquiringBank over HttpClient; logs + duration metric
+│   ├── AcquiringBankClient.Log.cs        # partial: LoggerMessage events 2000–2001
 │   ├── AcquiringBankOptions.cs           # BaseUrl, TimeoutSeconds (DataAnnotations, ValidateOnStart)
 │   ├── BankPaymentRequest.cs             # snake_case contract (internal); masked ToString()
 │   ├── BankPaymentResponse.cs            # snake_case contract (internal)
@@ -158,9 +159,12 @@ src/PaymentGateway.Api/
     ├── PaymentResponse.cs                # the payment representation (XML-documented)
     ├── PaymentRejectedProblemDetails.cs  # : ValidationProblemDetails + paymentStatus (400)
     ├── BankFailureProblemDetails.cs      # : ProblemDetails + errorCode (502/503)
-    └── PaymentResultMapper.cs            # the single result → HTTP translator (200/400/502/503);
-                                          #   unbindable body: Rejected + paymentStatus on the processing
-                                          #   action only, logs PaymentRequestUnreadable (1003)
+    ├── PaymentResultMapper.cs            # the single result → HTTP translator (200/400/502/503);
+    │                                     #   builds every Rejected / bank-failure / invalid-request body
+    ├── UnreadableRequestHandler.cs       # unbindable body (InvalidModelStateResponseFactory): fixed
+    │                                     #   messages; Rejected + paymentStatus on the processing action
+    │                                     #   only, via PaymentResultMapper
+    └── UnreadableRequestHandler.Log.cs   # partial: LoggerMessage event 1003 PaymentRequestUnreadable
 
 test/PaymentGateway.Api.Tests/            # the template project, reused
 ├── PaymentGateway.Api.Tests.csproj       # Nullable, ImplicitUsings, TreatWarningsAsErrors; packages per R13
@@ -171,6 +175,8 @@ test/PaymentGateway.Api.Tests/            # the template project, reused
 │   │                                     #   metrics (MetricCollector), ProcessPaymentCommand.ToString
 │   ├── Infrastructure/                   # BankPaymentRequestTests (ToString masking)
 │   ├── Http/                             # PostPaymentRequestTests (ToString masking)
+│   ├── Architecture/                     # LayerDependencyTests: Principle II dependency rule and
+│   │                                     #   technology-free core, read from IL (no extra package)
 │   └── Fakes/                            # FakeAcquiringBank (records calls), FakePaymentRepository
 ├── Integration/
 │   ├── ProcessPaymentEndpointTests.cs    # 200/400/502/503 through the real pipeline; traceId in

@@ -11,7 +11,7 @@ public sealed class BankFailureProblemDetails : ProblemDetails
     /// <summary>The bank is unavailable or did not answer in time; trying again later may succeed.</summary>
     public const string BankUnavailable = "bank_unavailable";
 
-    /// <summary>The bank refused the request or answered unreadably; retrying will not help.</summary>
+    /// <summary>The bank answered with an error or with a response that cannot be trusted; retrying will not help.</summary>
     public const string BankError = "bank_error";
 
     /// <summary><c>bank_unavailable</c> or <c>bank_error</c>.</summary>

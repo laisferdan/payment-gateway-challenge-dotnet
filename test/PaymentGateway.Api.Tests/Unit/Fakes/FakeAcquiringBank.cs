@@ -16,7 +16,7 @@ public sealed class FakeAcquiringBank : IAcquiringBank
 
     public PaymentRequest? LastRequest { get; private set; }
 
-    public Task<BankAuthorizationResult> RequestAuthorizationAsync(PaymentRequest request, CancellationToken cancellationToken)
+    public Task<BankAuthorizationResult> RequestAuthorizationAsync(PaymentRequest request)
     {
         CallCount++;
         LastRequest = request;

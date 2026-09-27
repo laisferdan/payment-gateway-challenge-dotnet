@@ -5,16 +5,10 @@ namespace PaymentGateway.Api.Tests.Unit.Domain;
 public class SupportedCurrenciesTests
 {
     [Theory]
-    [InlineData("GBP", true)]
-    [InlineData("EUR", true)]
-    [InlineData("USD", true)]
-    [InlineData("gbp", false)]
-    [InlineData("Gbp", false)]
-    [InlineData("GB", false)]
-    [InlineData("GBPX", false)]
-    [InlineData("JPY", false)]
-    [InlineData("", false)]
-    public void IsSupported_ForCode_ReturnsWhetherItIsInTheOrdinalList(string code, bool expected)
+    [InlineData("GBP")]
+    [InlineData("EUR")]
+    [InlineData("USD")]
+    public void IsSupported_ForSupportedCode_ReturnsTrue(string code)
     {
         // Arrange
 
@@ -22,7 +16,25 @@ public class SupportedCurrenciesTests
         bool supported = SupportedCurrencies.IsSupported(code);
 
         // Assert
-        Assert.Equal(expected, supported);
+        Assert.True(supported);
+    }
+
+    [Theory]
+    [InlineData("gbp")]
+    [InlineData("Gbp")]
+    [InlineData("GB")]
+    [InlineData("GBPX")]
+    [InlineData("JPY")]
+    [InlineData("")]
+    public void IsSupported_ForUnsupportedCode_ReturnsFalse(string code)
+    {
+        // Arrange
+
+        // Act
+        bool supported = SupportedCurrencies.IsSupported(code);
+
+        // Assert
+        Assert.False(supported);
     }
 
     [Fact]

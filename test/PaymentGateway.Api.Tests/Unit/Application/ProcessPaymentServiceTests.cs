@@ -29,18 +29,23 @@ public class ProcessPaymentServiceTests
         Cvv = Cvv,
     };
 
+    public static TheoryData<BankAuthorizationResult, PaymentStatus> BankDecisions => new()
+    {
+        { new BankAuthorizationResult.Authorized(), PaymentStatus.Authorized },
+        { new BankAuthorizationResult.Declined(), PaymentStatus.Declined },
+    };
+
     [Theory]
-    [InlineData(true, PaymentStatus.Authorized)]
-    [InlineData(false, PaymentStatus.Declined)]
-    public async Task Process_WhenBankDecides_ReturnsProcessedAndRecordsPayment(bool bankAuthorizes, PaymentStatus expectedStatus)
+    [MemberData(nameof(BankDecisions))]
+    public async Task Process_WhenBankDecides_ReturnsProcessedAndRecordsPayment(BankAuthorizationResult decision, PaymentStatus expectedStatus)
     {
         // Arrange
-        FakeAcquiringBank bank = new(bankAuthorizes ? new BankAuthorizationResult.Authorized() : new BankAuthorizationResult.Declined());
+        FakeAcquiringBank bank = new(decision);
         FakePaymentRepository repository = new();
         ProcessPaymentService service = CreateService(bank, repository);
 
         // Act
-        ProcessPaymentResult result = await service.ProcessAsync(ValidCommand, CancellationToken.None);
+        ProcessPaymentResult result = await service.ProcessAsync(ValidCommand);
 
         // Assert
         Payment payment = Assert.IsType<ProcessPaymentResult.Processed>(result).Payment;
@@ -66,7 +71,7 @@ public class ProcessPaymentServiceTests
         ProcessPaymentCommand command = new() { CardNumber = "1234", Currency = "gbp", Amount = 0 };
 
         // Act
-        ProcessPaymentResult result = await service.ProcessAsync(command, CancellationToken.None);
+        ProcessPaymentResult result = await service.ProcessAsync(command);
 
         // Assert
         IReadOnlyList<ValidationError> errors = Assert.IsType<ProcessPaymentResult.Rejected>(result).Errors;
@@ -86,7 +91,7 @@ public class ProcessPaymentServiceTests
         ProcessPaymentService service = CreateService(bank, repository);
 
         // Act
-        ProcessPaymentResult result = await service.ProcessAsync(ValidCommand, CancellationToken.None);
+        ProcessPaymentResult result = await service.ProcessAsync(ValidCommand);
 
         // Assert
         Assert.Equal(kind, Assert.IsType<ProcessPaymentResult.BankFailed>(result).Kind);
@@ -95,17 +100,16 @@ public class ProcessPaymentServiceTests
     }
 
     [Theory]
-    [InlineData(true, "Authorized")]
-    [InlineData(false, "Declined")]
-    public async Task Process_WhenBankDecides_LogsPaymentProcessed(bool bankAuthorizes, string expectedStatus)
+    [MemberData(nameof(BankDecisions))]
+    public async Task Process_WhenBankDecides_LogsPaymentProcessed(BankAuthorizationResult decision, PaymentStatus expectedStatus)
     {
         // Arrange
-        FakeAcquiringBank bank = new(bankAuthorizes ? new BankAuthorizationResult.Authorized() : new BankAuthorizationResult.Declined());
+        FakeAcquiringBank bank = new(decision);
         FakeLogger<ProcessPaymentService> logger = new();
         ProcessPaymentService service = CreateService(bank, new FakePaymentRepository(), logger);
 
         // Act
-        ProcessPaymentResult result = await service.ProcessAsync(ValidCommand, CancellationToken.None);
+        ProcessPaymentResult result = await service.ProcessAsync(ValidCommand);
 
         // Assert
         FakeLogRecord record = Assert.Single(logger.Collector.GetSnapshot());
@@ -113,7 +117,7 @@ public class ProcessPaymentServiceTests
         Assert.Equal("PaymentProcessed", record.Id.Name);
         Assert.Equal(LogLevel.Information, record.Level);
         Assert.Equal(((ProcessPaymentResult.Processed)result).Payment.Id.ToString(), record.GetStructuredStateValue("paymentId"));
-        Assert.Equal(expectedStatus, record.GetStructuredStateValue("status"));
+        Assert.Equal(expectedStatus.ToString(), record.GetStructuredStateValue("status"));
         Assert.Equal("GBP", record.GetStructuredStateValue("currency"));
         Assert.Equal("100", record.GetStructuredStateValue("amount"));
         AssertNoCardData(record);
@@ -136,7 +140,7 @@ public class ProcessPaymentServiceTests
         };
 
         // Act
-        await service.ProcessAsync(command, CancellationToken.None);
+        await service.ProcessAsync(command);
 
         // Assert
         FakeLogRecord record = Assert.Single(logger.Collector.GetSnapshot());
@@ -157,7 +161,7 @@ public class ProcessPaymentServiceTests
         ProcessPaymentService service = CreateService(new FakeAcquiringBank(new BankAuthorizationResult.Failed(kind)), new FakePaymentRepository(), logger);
 
         // Act
-        await service.ProcessAsync(ValidCommand, CancellationToken.None);
+        await service.ProcessAsync(ValidCommand);
 
         // Assert
         FakeLogRecord record = Assert.Single(logger.Collector.GetSnapshot());
@@ -193,7 +197,7 @@ public class ProcessPaymentServiceTests
         ProcessPaymentCommand command = commandKind == "valid" ? ValidCommand : new ProcessPaymentCommand();
 
         // Act
-        await service.ProcessAsync(command, CancellationToken.None);
+        await service.ProcessAsync(command);
 
         // Assert
         CollectedMeasurement<long> measurement = Assert.Single(collector.GetMeasurementSnapshot());

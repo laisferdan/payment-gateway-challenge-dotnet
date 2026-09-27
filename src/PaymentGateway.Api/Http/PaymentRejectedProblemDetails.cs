@@ -6,7 +6,7 @@ namespace PaymentGateway.Api.Http;
 
 /// <summary>
 /// The body of every <c>400</c> of <c>POST /api/payments</c>: the request was Rejected, the bank was
-/// not called and no payment was recorded. <c>errors</c> lists every invalid field.
+/// not called and no payment was recorded. <c>errors</c> maps each invalid field to its rule.
 /// </summary>
 public sealed class PaymentRejectedProblemDetails : ValidationProblemDetails
 {

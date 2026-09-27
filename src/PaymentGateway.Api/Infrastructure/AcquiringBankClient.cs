@@ -34,7 +34,7 @@ public sealed partial class AcquiringBankClient : IAcquiringBank
         _logger = logger;
     }
 
-    public async Task<BankAuthorizationResult> RequestAuthorizationAsync(PaymentRequest request, CancellationToken cancellationToken)
+    public async Task<BankAuthorizationResult> RequestAuthorizationAsync(PaymentRequest request)
     {
         long start = _timeProvider.GetTimestamp();
         int? httpStatusCode = null;
@@ -42,16 +42,11 @@ public sealed partial class AcquiringBankClient : IAcquiringBank
         try
         {
             using HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
-                PaymentsPath, BankPaymentRequest.From(request), cancellationToken);
+                PaymentsPath, BankPaymentRequest.From(request));
             httpStatusCode = (int)response.StatusCode;
-            result = await ClassifyAsync(response, cancellationToken);
+            result = await ClassifyAsync(response);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            // HttpClient.Timeout surfaces as a cancellation the caller did not ask for.
-            result = new BankAuthorizationResult.Failed(BankFailureKind.Unavailable);
-        }
-        catch (HttpRequestException)
+        catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
         {
             result = new BankAuthorizationResult.Failed(BankFailureKind.Unavailable);
         }
@@ -74,7 +69,7 @@ public sealed partial class AcquiringBankClient : IAcquiringBank
         LogBankCallCompleted(_logger, (long)duration.TotalMilliseconds, outcome);
     }
 
-    private static async Task<BankAuthorizationResult> ClassifyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<BankAuthorizationResult> ClassifyAsync(HttpResponseMessage response)
     {
         if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
         {
@@ -86,33 +81,24 @@ public sealed partial class AcquiringBankClient : IAcquiringBank
             return new BankAuthorizationResult.Failed(BankFailureKind.Error);
         }
 
-        BankPaymentResponse? body = await ReadBodyAsync(response, cancellationToken);
+        BankPaymentResponse? body = await ReadBodyAsync(response);
         return body switch
         {
             { Authorized: true, AuthorizationCode: { Length: > 0 } } => new BankAuthorizationResult.Authorized(),
             { Authorized: false } => new BankAuthorizationResult.Declined(),
-            // Missing "authorized", or authorized without a code: the answer cannot be trusted.
             _ => new BankAuthorizationResult.Failed(BankFailureKind.Error),
         };
     }
 
-    private static async Task<BankPaymentResponse?> ReadBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    private static async Task<BankPaymentResponse?> ReadBodyAsync(HttpResponseMessage response)
     {
         try
         {
-            return await response.Content.ReadFromJsonAsync<BankPaymentResponse>(cancellationToken);
+            return await response.Content.ReadFromJsonAsync<BankPaymentResponse>();
         }
         catch (JsonException)
         {
             return null;
         }
     }
-
-    [LoggerMessage(EventId = 2000, EventName = "BankCallCompleted", Level = LogLevel.Information,
-        Message = "Acquiring bank answered {outcome} in {durationMs} ms")]
-    private static partial void LogBankCallCompleted(ILogger logger, long durationMs, string outcome);
-
-    [LoggerMessage(EventId = 2001, EventName = "BankCallFailed", Level = LogLevel.Warning,
-        Message = "Acquiring bank call failed ({failureKind}, HTTP {httpStatusCode}) after {durationMs} ms")]
-    private static partial void LogBankCallFailed(ILogger logger, long durationMs, BankFailureKind failureKind, int? httpStatusCode);
 }

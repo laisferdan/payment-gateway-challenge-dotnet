@@ -66,53 +66,39 @@ public sealed class PaymentRequest
 
         if (!IsDigitsOfLength(cardNumber, MinCardNumberLength, MaxCardNumberLength))
         {
-            errors.Add(new ValidationError(
-                Fields.CardNumber,
-                $"Card number must be {MinCardNumberLength} to {MaxCardNumberLength} characters long and contain only digits 0-9."));
+            errors.Add(new ValidationError(Fields.CardNumber, Messages.CardNumber));
         }
 
         if (expiryMonth is not (>= MinExpiryMonth and <= MaxExpiryMonth))
         {
-            errors.Add(new ValidationError(
-                Fields.ExpiryMonth,
-                $"Expiry month must be between {MinExpiryMonth} and {MaxExpiryMonth}."));
+            errors.Add(new ValidationError(Fields.ExpiryMonth, Messages.ExpiryMonth));
         }
 
         bool yearInRange = expiryYear is int year && year >= today.Year && year <= MaxExpiryYear;
         if (!yearInRange)
         {
-            errors.Add(new ValidationError(
-                Fields.ExpiryYear,
-                $"Expiry year must be a full year, not in the past and at most {MaxExpiryYear}."));
+            errors.Add(new ValidationError(Fields.ExpiryYear, Messages.ExpiryYear));
         }
         else if (errors.All(error => error.Field != Fields.ExpiryMonth) && IsBeforeCurrentMonth(expiryMonth!.Value, expiryYear!.Value, today))
         {
             // Checked only when month and year are each valid, so one bad field does not produce a
             // misleading second error.
-            errors.Add(new ValidationError(
-                Fields.ExpiryYear,
-                "The card has expired: expiry month and year must not be before the current month."));
+            errors.Add(new ValidationError(Fields.ExpiryYear, Messages.Expired));
         }
 
         if (currency is null || currency.Length != SupportedCurrencies.Length || !SupportedCurrencies.IsSupported(currency))
         {
-            errors.Add(new ValidationError(
-                Fields.Currency,
-                $"Currency must be one of: {string.Join(", ", SupportedCurrencies.Codes)}."));
+            errors.Add(new ValidationError(Fields.Currency, Messages.Currency));
         }
 
         if (amount is not >= MinAmount)
         {
-            errors.Add(new ValidationError(
-                Fields.Amount,
-                $"Amount must be an integer in the minor currency unit of at least {MinAmount}."));
+            errors.Add(new ValidationError(Fields.Amount, Messages.Amount));
         }
 
         if (!IsDigitsOfLength(cvv, MinCvvLength, MaxCvvLength))
         {
-            errors.Add(new ValidationError(
-                Fields.Cvv,
-                $"CVV must be {MinCvvLength} to {MaxCvvLength} characters long and contain only digits 0-9."));
+            errors.Add(new ValidationError(Fields.Cvv, Messages.Cvv));
         }
 
         if (errors.Count > 0)
@@ -147,5 +133,50 @@ public sealed class PaymentRequest
         public const string Currency = "currency";
         public const string Amount = "amount";
         public const string Cvv = "cvv";
+
+        public static readonly IReadOnlyList<string> All = [CardNumber, ExpiryMonth, ExpiryYear, Currency, Amount, Cvv];
+    }
+
+    /// <summary>
+    /// One message per field, stating what a valid value looks like – including whether it is text or
+    /// a whole number, so the same message also answers a value of the wrong kind. Never contains the
+    /// submitted value.
+    /// </summary>
+    public static class Messages
+    {
+        public static readonly string CardNumber =
+            $"Card number must be a string of {MinCardNumberLength} to {MaxCardNumberLength} digits (0-9).";
+
+        public static readonly string ExpiryMonth =
+            $"Expiry month must be a whole number from {MinExpiryMonth} to {MaxExpiryMonth}.";
+
+        public static readonly string ExpiryYear =
+            $"Expiry year must be a whole number with all four digits (e.g. 2027), not in the past and at most {MaxExpiryYear}.";
+
+        public const string Expired = "The expiry month and year must not be before the current month (UTC): the card must not have expired.";
+
+        public static readonly string Currency =
+            $"Currency must be one of: {string.Join(", ", SupportedCurrencies.Codes)}.";
+
+        public static readonly string Amount =
+            $"Amount must be a whole number of at least {MinAmount}, in the currency's minor unit (e.g. 1050 for 10.50).";
+
+        public static readonly string Cvv =
+            $"CVV must be a string of {MinCvvLength} or {MaxCvvLength} digits (0-9).";
+
+        /// <summary>The message for a field's value, used when that value is missing, invalid or of the wrong type.</summary>
+        public static string For(string field)
+        {
+            return field switch
+            {
+                Fields.CardNumber => CardNumber,
+                Fields.ExpiryMonth => ExpiryMonth,
+                Fields.ExpiryYear => ExpiryYear,
+                Fields.Currency => Currency,
+                Fields.Amount => Amount,
+                Fields.Cvv => Cvv,
+                _ => throw new ArgumentOutOfRangeException(nameof(field), field, "Not a payment request field."),
+            };
+        }
     }
 }
