@@ -231,6 +231,28 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
         Assert.Equal(traceId, LogText.TraceId(entry));
     }
 
+    [Theory]
+    [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":"ten","cvv":"123"}""")]
+    [InlineData("{")]
+    public async Task Post_WhenBodyIsUnreadable_LogsPaymentRequestUnreadableOnce(string json)
+    {
+        // Arrange
+        using PaymentGatewayFactory factory = new(_bank.Url);
+        using HttpClient client = factory.CreateClient();
+
+        // Act
+        HttpResponseMessage response = await PostAsync(client, json);
+
+        // Assert
+        string? traceId = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("traceId").GetString();
+        FakeLogRecord record = Assert.Single(factory.LogCollector.GetSnapshot(), r => r.Id.Name == "PaymentRequestUnreadable");
+        Assert.Equal(1003, record.Id.Id);
+        Assert.Equal(LogLevel.Information, record.Level);
+        Assert.NotNull(record.GetStructuredStateValue("invalidFields"));
+        Assert.DoesNotContain("ten", LogText.Of(record));
+        Assert.Equal(traceId, LogText.TraceId(record));
+    }
+
     [Fact]
     public async Task Post_WhenBodyIsUnreadable_CountsNoOutcome()
     {
