@@ -316,9 +316,9 @@ not make the gateway look dead.
 - **Latency (95 % under 2 s)** is checked manually with `curl -w "%{time_total}"`, and observed in
   production through `http.server.request.duration`; there is no load test.
 - **Retrieval accepts every GUID notation** the platform parses – canonical, without hyphens, in
-  braces, in parentheses – case-insensitively. The route has **no `:guid` constraint**, so a
-  malformed id is matched by the action (and answered `400` naming `id`) rather than becoming an
-  unmatched route (which would be an indistinguishable `404`).
+  braces, in parentheses or the hexadecimal `{0x…}` form – case-insensitively. The route has
+  **no `:guid` constraint**, so a malformed id is matched by the action (and answered `400` naming
+  `id`) rather than becoming an unmatched route (which would be an indistinguishable `404`).
 - **Surrounding whitespace is refused, not trimmed.** The platform's GUID parser ignores it, but the
   constitution forbids trimming a value into validity (Principle IX), and the gateway never issues
   an id with whitespace. A small `PaymentIdModelBinder` binds the route value as sent: a valid GUID

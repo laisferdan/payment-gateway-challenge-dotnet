@@ -417,3 +417,8 @@ start the next test before the current pair is green. T007 has two Green steps (
 - Latency (SC-004) is observed manually via the quickstart, not load-tested (research R11; T019).
 - T010's test may be green immediately after T009 lands; if so, record it in the commit message as
   a guard (same convention as UC1 T031/T058/T073) rather than skipping the task.
+
+## Phase 10: Convergence
+
+- [X] T030 Add the hexadecimal `{0x…}` form to the "Retrieval accepts every GUID notation" bullet in `README.md` Design Decisions & Assumptions (it lists canonical, no hyphens, braces and parentheses only) per FR-006 / T028 (partial)
+- [X] T031 Add the hexadecimal `{0x…}` form to the notation list in the comment of the braces `GET` request in `src/PaymentGateway.Api/PaymentGateway.Api.http` per FR-017 / plan: `.http` "other notations" (partial)

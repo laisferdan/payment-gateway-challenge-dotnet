@@ -60,7 +60,8 @@ Content-Type: application/json
 GET {{base}}/api/payments/{{processPayment.response.body.$.id}}
 
 ### Retrieve – in braces also finds the same payment; every accepted GUID notation is
-### case-insensitive too (canonical, without hyphens, in braces or in parentheses) (UC2)
+### case-insensitive too (canonical, without hyphens, in braces, in parentheses or the
+### hexadecimal {0x…} form) (UC2)
 GET {{base}}/api/payments/%7B{{processPayment.response.body.$.id}}%7D
 
 ### Retrieve – not found: a well-formed but unissued id (UC2)
