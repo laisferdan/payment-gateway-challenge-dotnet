@@ -1,6 +1,6 @@
 # Feature Specification: Retrieve a Payment's Details (UC2)
 
-**Feature Branch**: `develop` (no feature branch created; spec directory `specs/002-retrieve-payment`)
+**Feature Branch**: `feature/uc2-implementation` (spec directory `specs/002-retrieve-payment`)
 
 **Created**: 2026-09-26
 
@@ -28,11 +28,13 @@ constitution principle it traces to (Constitution, Principle I).
 - Q: Should a malformed identifier be refused as invalid input or answered as "payment not
   found"? → A: Refused as **invalid input naming the `id` field**, never "not found": the merchant
   must be able to tell a typo from a missing payment (fail-closed, Constitution Principle IX).
-- Q: Which textual forms of the identifier are accepted? → A: **Any GUID text form the platform
-  parses** – canonical 8-4-4-4-12, without hyphens, in braces `{…}` or in parentheses `(…)`. The
-  assessment says "feel free to choose whatever format"; a GUID written in another notation is the
-  same identifier, not an invalid value coerced into validity, and a GUID-typed input gives this
-  validation for free.
+- Q: Which textual forms of the identifier are accepted? → A: **Any GUID notation the platform
+  parses** – canonical 8-4-4-4-12, without hyphens, in braces `{…}`, in parentheses `(…)` or the
+  hexadecimal `{0x…,…}` form. The assessment says "feel free to choose whatever format"; a GUID
+  written in another notation is the same identifier, not an invalid value coerced into validity.
+  *(Refined 2026-09-27)*: surrounding whitespace is **not** a notation – the platform's parser
+  trims it, which Principle IX forbids, so an otherwise valid GUID with leading or trailing
+  whitespace is refused.
 - Q: Does the letter case of the identifier matter? → A: **No.** GUID hex digits are
   case-insensitive by definition, so an uppercase identifier finds the same payment as its
   lowercase form. This is not coercion.
@@ -91,8 +93,9 @@ appears.
    of times, **Then** every response is identical, the payment is unchanged and the acquiring bank
    was never contacted.
 6. **Given** a recorded payment, **When** the merchant retrieves it using its identifier in
-   uppercase, without hyphens, in braces or in parentheses, **Then** the merchant receives the same
-   payment, and the returned identifier is in the same form as in the processing response.
+   uppercase, without hyphens, in braces, in parentheses or in the hexadecimal `{0x…}` form,
+   **Then** the merchant receives the same payment, and the returned identifier is in the same
+   form as in the processing response.
 7. **Given** the gateway and the acquiring bank simulator are running, **When** a merchant
    processes a payment and then retrieves it with the identifier returned (end-to-end journey),
    **Then** the retrieved details equal the processing response.
@@ -163,8 +166,8 @@ never an unexpected error.
 - **Declined payment**: retrievable exactly like an Authorized one; status `Declined`.
 - **Leading-zero last four digits** (e.g. `0012`, `0000`): returned as text with the zeros intact.
 - **Uppercase vs lowercase identifier**: the same payment; letter case is not significant.
-- **Identifier without hyphens, in braces `{…}` or in parentheses `(…)`**: accepted as the same
-  identifier and finds the same payment.
+- **Identifier without hyphens, in braces `{…}`, in parentheses `(…)` or in the hexadecimal
+  `{0x…}` form**: accepted as the same identifier and finds the same payment.
 - **Identifier with a wrong length, non-hex characters (e.g. `g`), misplaced hyphens or mismatched
   brackets**: invalid identifier naming `id`.
 - **Otherwise valid identifier with leading or trailing whitespace**: invalid identifier naming
@@ -209,14 +212,17 @@ never an unexpected error.
 Principle IX)*
 
 - **FR-005**: The payment identifier supplied by the merchant MUST be validated before use. An
-  identifier that is not a GUID in any text form the platform parses MUST be refused as **invalid
-  input** with an explanation naming the `id` field and the rule it broke. The payment store MUST
+  identifier that is not a GUID in one of the notations of FR-006, exactly as sent, MUST be
+  refused as **invalid input** with an explanation naming the `id` field and the rule it broke. The payment store MUST
   NOT be searched, the outcome MUST be distinguishable from "payment not found", and it MUST NOT be
   an unexpected error.
-- **FR-006**: Every GUID text form the platform parses MUST be accepted as the same identifier –
-  canonical 8-4-4-4-12, without hyphens, in braces or in parentheses – and letter case MUST NOT be
-  significant. Reading a GUID written in another notation is interpreting the same value, not
-  coercing an invalid one; any other value is refused (FR-005), never altered into validity.
+- **FR-006**: Every GUID notation the platform parses MUST be accepted as the same identifier –
+  canonical 8-4-4-4-12, without hyphens, in braces, in parentheses or the hexadecimal `{0x…}`
+  form – and letter case MUST NOT be significant. Reading a GUID written in another notation is
+  interpreting the same value, not coercing an invalid one. The identifier MUST have no leading
+  or trailing whitespace: the platform's parser would trim it, which is altering a value into
+  validity (Constitution Principle IX). Any other value is refused (FR-005), never altered into
+  validity.
 
 **Not found** *(Assessment: Retrieving a payment's details; Constitution API Design)*
 
@@ -275,8 +281,8 @@ Principle IX)*
   card digits, expiry month, expiry year, currency, amount (minor units). Holds no full card
   number, CVV or authorization code.
 - **Payment Identifier**: the random, non-sequential GUID issued by UC1 when a payment is
-  recorded; the only lookup key. Accepted in any GUID text form, case-insensitively; returned in
-  the same form as in the processing response.
+  recorded; the only lookup key. Accepted in any GUID notation of FR-006, case-insensitively and
+  without surrounding whitespace; returned in the same form as in the processing response.
 - **Retrieval Outcome**: exactly one of **Found** (the payment), **Not found**, or **Invalid
   identifier** (field `id` and the rule broken).
 
@@ -304,8 +310,8 @@ Principle IX)*
   simulator (deferred from UC1, research R14) – for an Authorized and a Declined payment –
   verifying that the retrieved details equal the processing response.
 - **Identifier validation tests** cover every accepted form (canonical, no hyphens, braces,
-  parentheses, uppercase) and invalid boundaries (wrong length, non-hex character, misplaced
-  hyphen, mismatched bracket) – Constitution Principle IX.
+  parentheses, hexadecimal, uppercase) and invalid boundaries (wrong length, non-hex character,
+  misplaced hyphen, mismatched bracket, surrounding whitespace) – Constitution Principle IX.
 - **Card data**: absence of the full card number and CVV from retrieval logs is verified by a
   test (Constitution Principle VIII).
 - **Invalid id must not become 404**: the chosen mechanism must turn a malformed id into the
@@ -337,8 +343,9 @@ Principle IX)*
 - **Malformed identifier**: refused as invalid input naming the `id` field (fail-closed,
   Constitution Principle IX), distinct from "not found" so the merchant can tell a typo from a
   missing payment (FR-005).
-- **Identifier forms and letter case**: any GUID text form the platform parses is accepted and
-  letter case is not significant (FR-006); the assessment leaves the format to the gateway.
+- **Identifier forms and letter case**: any GUID notation the platform parses is accepted, letter
+  case is not significant, and surrounding whitespace is refused rather than trimmed (FR-006);
+  the assessment leaves the format to the gateway.
 - **Read-only and bank-free**: retrieval has no side effects and never contacts the acquiring bank
   (FR-009, FR-010).
 - **No ownership check**: merchant authentication is out of scope (Constitution Principle I);
@@ -352,26 +359,21 @@ Principle IX)*
 - **No listing or search**: retrieval is by identifier only; listing, filtering or searching
   payments (e.g. by date or merchant reference) is out of scope.
 
-## Observations on UC1 Artifacts and the Constitution (not changed)
+## Observations on UC1 Artifacts and the Constitution (all resolved)
 
-None of the following files has been modified by this feature.
+Recorded when this spec was written; each has since been resolved outside this feature or by its
+plan. Kept as history.
 
-1. **Constitution API Design – amendment needed**: it lists only `200 OK` / `404 Not Found` for
-   `GET /api/payments/{id}`. It must also list **`400 Bad Request` (invalid identifier, without
-   `paymentStatus`)**, as decided in Clarifications. To be done through `/speckit-constitution`
-   (PATCH), not by this feature.
-2. **UC1 contract** (`specs/001-process-payment/contracts/payments-api.yaml`): its `info`
-   description covers UC1 only and its ProblemDetails family has no "not found" or "invalid
-   identifier" variant. UC2's plan extends the contract in its own `contracts/` rather than
-   editing UC1's file.
-3. **UC1 `400` meaning**: in UC1, `400` always means a Rejected payment with
-   `paymentStatus: "Rejected"`. UC2 adds a `400` without `paymentStatus` for an invalid
-   identifier; the OpenAPI document and README must distinguish the two, and UC1's
-   invalid-model response must add `paymentStatus` only on the processing route (Notes for
-   `/speckit-plan`).
-4. **UC1 research R14** states "no concurrency test" for the repository, while FR-012 requires
-   concurrent correctness; the UC2 plan states how FR-012 is verified.
-5. **Metrics**: resolved – no retrieval metric; Constitution Principle XI needs no change.
-6. **Documentation**: resolved – UC1 FR-022 and UC2 FR-017 together complete the API
-   documentation; UC2's Definition of Done includes the retrieval endpoint in OpenAPI and the
-   README.
+1. **Constitution API Design** – *resolved by constitution 1.0.2*: `GET /api/payments/{id}` now
+   lists `400 Bad Request` (malformed id, `errors.id`, no `paymentStatus`).
+2. **UC1 contract** – *resolved*: UC2's own [`contracts/payments-api.yaml`](contracts/payments-api.yaml)
+   describes the retrieval operation and `$ref`s UC1's schemas; UC1's file is unchanged (research
+   R10).
+3. **UC1 `400` meaning** – *resolved*: `InvalidModelStateResponder` adds `paymentStatus:
+   "Rejected"` only on the processing action (`[RespondsToInvalidRequest]`); the OpenAPI document
+   and README distinguish the two `400`s (research R4).
+4. **Concurrency (FR-012)** – *resolved*: verified by design and review, not a stress test
+   (research R7).
+5. **Metrics** – *resolved*: no retrieval metric; Constitution Principle XI needs no change.
+6. **Documentation** – *resolved*: UC1 FR-022 and UC2 FR-017 together complete the API
+   documentation.

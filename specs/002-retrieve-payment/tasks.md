@@ -137,9 +137,9 @@ service (FR-010, Q5).
   Declined via WireMock: `POST` then `GET {id}` → `200`, body **equal, field for field**, to the
   `POST` response); `Get_WhenLastFourHaveLeadingZeros_ReturnsThemAsText` (card ending `0012`);
   `[Theory] Get_WithAnyAcceptedGuidNotation_ReturnsTheSamePayment` over the id in uppercase, without
-  hyphens (`N`), in braces (`B`, URL-encoded `%7B…%7D`) and in parentheses (`P`) → `200`, `id` in
-  the body is the canonical lowercase form (surrounding whitespace was in this list until C1 – now
-  refused, T020); `Get_CalledTwice_ReturnsTwoIdenticalBodies` (FR-009); and `Get_ForARecordedPayment_MakesNoRequestToTheBank`
+  hyphens (`N`), in braces (`B`, URL-encoded `%7B…%7D`), in parentheses (`P`) and in the
+  hexadecimal form (`X`, added by T025) → `200`, `id` in the body is the canonical lowercase form
+  (surrounding whitespace was in this list until C1 – now refused, T020); `Get_CalledTwice_ReturnsTwoIdenticalBodies` (FR-009); and `Get_ForARecordedPayment_MakesNoRequestToTheBank`
   (`_bank.Server` receives exactly the one `POST` request and none for the `GET`s, FR-010). Red
   (does not compile: no `GET` action exists). `test:`
 - [X] T008 [UC2] Green step 1/2 for T007: add the `GET` action to
@@ -166,13 +166,14 @@ identical, and WireMock sees no request during `GET`.
 ### (US2) Merchant is told when a payment cannot be found
 
 - [X] T010 [UC2] Add to `RetrievePaymentEndpointTests` (US2) `[Theory]`
-  `Get_WhenIdIsWellFormedButUnknown_Returns404` over a fresh random GUID and the all-zeros id
+  `Get_WhenIdIsWellFormedButUnknown_Returns404` over the all-zeros id
   (`00000000-0000-0000-0000-000000000000`) → `404`, `application/problem+json`, `title: "Payment
   not found"`, `detail: "No payment exists with the given id."`, `traceId`, no payment field in the
-  body; and `Get_WhenIdIsUnknown_ResponseIsIdenticalForEveryId` (two different unknown ids produce
-  byte-identical bodies apart from `traceId`, FR-008); plus the **correlation** assertion: the
-  body's `traceId` equals the `TraceId` scope value of the `PaymentNotFound` log entry (`FakeLogger`
-  via `factory.LogCollector`). Expected green immediately after T009 (the mapping already exists);
+  body; `Get_WhenIdIsUnknown_ResponseIsIdenticalForEveryId` (two fresh random GUIDs produce
+  bodies identical apart from `traceId`, FR-008 – strengthened by T027 to compare the whole
+  body); and `Get_WhenIdIsUnknown_TraceIdCorrelatesWithThePaymentNotFoundLogEntry` (the body's
+  `traceId` is a 32-hex id and equals the `TraceId` scope value of the `PaymentNotFound` log
+  entry – `FakeLogger` via `factory.LogCollector`; the format check was added by T026). Expected green immediately after T009 (the mapping already exists);
   if any assertion fails, treat it as Red and close the gap. `test:`
 
 **Checkpoint (US2)**: quickstart scenarios 6–7 work: an unknown or all-zeros id, and a payment
@@ -195,7 +196,10 @@ looked up after a restart (fresh factory instance), both answer `404` with the c
   is never reached, so the store is not searched – FR-005). Add
   `Get_OnTheCollectionRoute_Returns405` (`GET /api/payments` and `GET /api/payments/` → `405`
   `ProblemDetails` with `traceId`, delivered by UC1's `UseStatusCodePages()` – research R5; no new
-  code). Red for the `400` and logging assertions: today every action without
+  code). Also add `Respond_ForInvalidPaymentIdAction_ReturnsInvalidIdWithoutEchoingIt` to
+  `test/Unit/Http/Payments/InvalidModelStateResponderTests.cs` (an `ActionContext` marked
+  `InvalidRequestResponse.InvalidPaymentId` → `400` "Invalid payment id", `errors.id` only, no
+  `paymentStatus`, the attempted value absent). Red for the `400` and logging assertions: today every action without
   `[RespondsToInvalidRequest]` gets a generic `ValidationProblemDetails` with the framework's
   default message, which echoes the submitted value, and no 3002 log entry is written. `test:`
 - [X] T012 [UC2] In `src/Http/Payments/`: add `InvalidRequestResponse.InvalidPaymentId`; decorate
@@ -240,11 +244,11 @@ response (Constitution VIII 1.0.2; research R9).
 **Goal**: the OpenAPI document and README describe the retrieval endpoint (FR-017; Constitution X;
 research R10).
 
-- [X] T014 [UC2] ~~Add an OpenAPI-shape test to `OpenApiDocumentTests.cs`~~ – **dropped**: a test
-  asserting the generated Swagger JSON's `$ref` values would exercise Swashbuckle's own behaviour,
-  not this codebase's. Documentation completeness (FR-017) is verified manually instead, via
-  Swagger UI and the quickstart (T019), the same way UC1 verifies most of its README/OpenAPI
-  content. `docs:`
+- ~~T014~~ [UC2] **Dropped** (not done, no commit): ~~Add an OpenAPI-shape test to
+  `OpenApiDocumentTests.cs`~~ – a test asserting the generated Swagger JSON's `$ref` values would
+  exercise Swashbuckle's own behaviour, not this codebase's. Documentation completeness (FR-017)
+  is verified manually instead, via Swagger UI and the quickstart (T019). The one OpenAPI fact
+  this codebase does control – `id` is a path parameter – is tested by T022.
 - [X] T015 [UC2] Add an XML `<summary>`/`<remarks>`/`<param>`/`<response>` block to
   `PaymentsController.RetrievePaymentAsync` (accepted GUID forms, letter case, whitespace; the three
   outcomes) and `[ProducesResponseType]` for `200` (`PaymentResponse`), `400`
@@ -320,6 +324,34 @@ validity (Constitution IX; spec Edge Cases; research R1, revised 2026-09-27).
 
 ---
 
+## Phase 9: Analysis follow-ups [UC2] (`/speckit-analyze` second run – G1, U1, I2, T2)
+
+**Goal**: close the remaining coverage gaps. All are guard tests over behaviour that already
+exists: each was green on first run and was shown to fail by temporarily breaking the behaviour
+(same convention as UC1 T031/T058/T073).
+
+- [X] T025 [UC2] (US1, U1) Add the hexadecimal `X` notation (`{0x…,…}`, URL-encoded) to
+  `AcceptedNotations` in `RetrievePaymentEndpointTests`. Guard – shown red by temporarily refusing
+  values starting with `{0x}` in `PaymentIdModelBinder`. `test:`
+- [X] T026 [UC2] (US1/US3, G1 – FR-016, SC-006) Add
+  `Get_WhenPaymentExists_LogsPaymentRetrievedUnderTheRequestTraceId` (a `GET` sent with a W3C
+  `traceparent` header is logged as `PaymentRetrieved` under that trace id – a `200` body carries
+  no `traceId`) and `Get_WhenIdIsInvalid_TraceIdCorrelatesWithThePaymentIdInvalidLogEntry`. Make
+  both correlation tests (this one and T010's) also assert the `traceId` is a 32-hex id: without
+  it, a request with no trace id passes as `null == null`. Guard – shown red by temporarily
+  disabling the `ActivitySource` listener in `Program.cs`. `test:`
+- [X] T027 [UC2] (US2, I2 – FR-008) Strengthen `Get_WhenIdIsUnknown_ResponseIsIdenticalForEveryId`
+  to compare the whole body with `traceId` removed, not only `title`/`detail`/`status`. Guard –
+  shown red by temporarily adding a random extension member to the `404` body. `test:`
+- [X] T028 Update `spec.md` (FR-005/FR-006, Clarifications Q2, Key Entities, Assumptions: `X`
+  form accepted, surrounding whitespace refused; Observations marked resolved; branch header),
+  `plan.md` (branch header), the `RetrievePaymentAsync` XML `<remarks>` and `README.md` (the `X`
+  form; `traceparent` correlation for `200` responses; test strategy). `docs:`
+- [X] T029 (T2) Re-run the Definition of Done gates after Phases 8–9, including the E2E run
+  against the simulator and coverage collection. **Verify**: all gates pass. `chore:`
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase dependencies
@@ -333,7 +365,8 @@ validity (Constitution IX; spec Edge Cases; research R1, revised 2026-09-27).
 | 5 API documentation | 3 (T014–T015 need only 3) | 6 |
 | 6 E2E | 3–5 | 7 |
 | 7 Definition of Done | 1–6 | – |
-| 8 Whitespace refused (C1) | 3 (US3), 5 | re-run of 7's gates |
+| 8 Whitespace refused (C1) | 3 (US3), 5 | 9 |
+| 9 Analysis follow-ups | 3, 8 | – (T029 re-runs 7's gates) |
 
 ### Story order inside the HTTP phase
 
@@ -371,8 +404,9 @@ start the next test before the current pair is green. T007 has two Green steps (
 
 ## Notes
 
-- Summary: 24 tasks – Repository 3, Use case 3, HTTP 6 (US1 3, US2 1, US3 2), Card data guard 1,
-  Documentation 4 (T014 dropped), E2E 1, Definition of Done 1, Whitespace refused 5 (T020–T024).
+- Summary: 29 task IDs, 28 done – Repository 3, Use case 3, HTTP 6 (US1 3, US2 1, US3 2), Card
+  data guard 1, Documentation 3 (+ T014 dropped), E2E 1, Definition of Done 1, Whitespace refused 5
+  (T020–T024), Analysis follow-ups 5 (T025–T029).
 - No Setup or Foundational phase: UC2 adds no project, package, configuration key or entity
   (plan.md Summary); it reuses UC1's `Program.cs`, `PaymentGatewayFactory`,
   `WireMockBankFixture` and `FakePaymentRepository` unchanged except for the one added member

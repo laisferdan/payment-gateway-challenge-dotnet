@@ -51,8 +51,9 @@ public sealed class PaymentsController : ControllerBase
 
     /// <summary>Retrieves a previously processed payment.</summary>
     /// <remarks>
-    /// Any GUID notation the platform parses is accepted – canonical, without hyphens, in braces
-    /// or in parentheses – in any letter case. Surrounding whitespace is refused, never trimmed.
+    /// Any GUID notation the platform parses is accepted – canonical, without hyphens, in braces,
+    /// in parentheses or the hexadecimal <c>{0x…}</c> form – in any letter case. Surrounding
+    /// whitespace is refused, never trimmed.
     /// Retrieval has no side effects and never contacts the acquiring bank.
     /// </remarks>
     /// <param name="id">The payment id returned when the payment was processed.</param>

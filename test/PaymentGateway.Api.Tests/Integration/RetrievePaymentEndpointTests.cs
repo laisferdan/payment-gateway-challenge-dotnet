@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using Microsoft.Extensions.Logging.Testing;
 
@@ -17,6 +18,9 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
     private const string Cvv = "123";
     private const string AuthorizedBody = """{"authorized":true,"authorization_code":"0bb07405-6d44-4b50-a14f-7ae0beff13ad"}""";
     private const string DeclinedBody = """{"authorized":false,"authorization_code":""}""";
+
+    // A 200 body has no traceId: the merchant correlates a found payment through its own traceparent.
+    private const string MerchantTraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
 
     private readonly WireMockBankFixture _bank;
 
@@ -91,6 +95,7 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
         (Guid guid) => guid.ToString("N"),
         (Guid guid) => Uri.EscapeDataString(guid.ToString("B")),
         (Guid guid) => guid.ToString("P"),
+        (Guid guid) => Uri.EscapeDataString(guid.ToString("X")),
     };
 
     [Fact]
@@ -160,11 +165,28 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
         HttpResponseMessage second = await client.GetAsync($"/api/payments/{Guid.NewGuid()}");
 
         // Assert
-        JsonElement firstBody = JsonDocument.Parse(await first.Content.ReadAsStringAsync()).RootElement;
-        JsonElement secondBody = JsonDocument.Parse(await second.Content.ReadAsStringAsync()).RootElement;
-        Assert.Equal(firstBody.GetProperty("title").GetString(), secondBody.GetProperty("title").GetString());
-        Assert.Equal(firstBody.GetProperty("detail").GetString(), secondBody.GetProperty("detail").GetString());
-        Assert.Equal(firstBody.GetProperty("status").GetInt32(), secondBody.GetProperty("status").GetInt32());
+        string firstBody = WithoutTraceId(await first.Content.ReadAsStringAsync());
+        string secondBody = WithoutTraceId(await second.Content.ReadAsStringAsync());
+        Assert.Equal(firstBody, secondBody);
+    }
+
+    [Fact]
+    public async Task Get_WhenPaymentExists_LogsPaymentRetrievedUnderTheRequestTraceId()
+    {
+        // Arrange
+        StubBank(200, AuthorizedBody);
+        using PaymentGatewayFactory factory = new(_bank.Url);
+        using HttpClient client = factory.CreateClient();
+        string id = await PostAndReadIdAsync(client, CardNumber);
+        using HttpRequestMessage request = new(HttpMethod.Get, $"/api/payments/{id}");
+        request.Headers.Add("traceparent", $"00-{MerchantTraceId}-00f067aa0ba902b7-01");
+
+        // Act
+        await client.SendAsync(request);
+
+        // Assert
+        FakeLogRecord record = Assert.Single(factory.LogCollector.GetSnapshot(), r => r.Id.Name == "PaymentRetrieved");
+        Assert.Equal(MerchantTraceId, LogText.TraceId(record));
     }
 
     [Fact]
@@ -179,8 +201,9 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
 
         // Assert
         JsonElement body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
-        string traceId = body.GetProperty("traceId").GetString()!;
+        string? traceId = body.GetProperty("traceId").GetString();
         FakeLogRecord record = Assert.Single(factory.LogCollector.GetSnapshot(), r => r.Id.Name == "PaymentNotFound");
+        Assert.Matches("^[0-9a-f]{32}$", traceId);
         Assert.Equal(traceId, LogText.TraceId(record));
     }
 
@@ -264,6 +287,24 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
         Assert.DoesNotContain(factory.LogCollector.GetSnapshot(), r => r.Id.Name is "PaymentRetrieved" or "PaymentNotFound");
     }
 
+    [Fact]
+    public async Task Get_WhenIdIsInvalid_TraceIdCorrelatesWithThePaymentIdInvalidLogEntry()
+    {
+        // Arrange
+        using PaymentGatewayFactory factory = new(_bank.Url);
+        using HttpClient client = factory.CreateClient();
+
+        // Act
+        HttpResponseMessage response = await client.GetAsync("/api/payments/abc");
+
+        // Assert
+        JsonElement body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        string? traceId = body.GetProperty("traceId").GetString();
+        FakeLogRecord record = Assert.Single(factory.LogCollector.GetSnapshot(), r => r.Id.Name == "PaymentIdInvalid");
+        Assert.Matches("^[0-9a-f]{32}$", traceId);
+        Assert.Equal(traceId, LogText.TraceId(record));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("/")]
@@ -286,6 +327,14 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
     private static string PaymentJson(string cardNumber, string currency = "GBP", int amount = 1050)
     {
         return $$"""{"cardNumber":"{{cardNumber}}","expiryMonth":12,"expiryYear":2030,"currency":"{{currency}}","amount":{{amount}},"cvv":"{{Cvv}}"}""";
+    }
+
+    // Only traceId may differ between two "not found" bodies (FR-008).
+    private static string WithoutTraceId(string json)
+    {
+        JsonObject body = JsonNode.Parse(json)!.AsObject();
+        body.Remove("traceId");
+        return body.ToJsonString();
     }
 
     private static Task<HttpResponseMessage> PostAsync(HttpClient client, string json)

@@ -1,6 +1,6 @@
 # Implementation Plan: Retrieve a Payment's Details (UC2)
 
-**Branch**: `develop` (spec directory `specs/002-retrieve-payment`) | **Date**: 2026-09-26 | **Spec**: [spec.md](spec.md)
+**Branch**: `feature/uc2-implementation` (spec directory `specs/002-retrieve-payment`) | **Date**: 2026-09-26 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/002-retrieve-payment/spec.md`
 
@@ -204,6 +204,10 @@ Resolves `/speckit-analyze` findings D1, D2, I1, I2 and C1.
   `RetrievePaymentAsync`) – research R6 records why.
 - **Surrounding whitespace (C1)**: now refused, not trimmed (Principle IX). Added
   `PaymentIdModelBinder` and `PaymentIdFromRouteAttribute` (tasks T020–T024) – research R1.
+- **Second analysis run (G1, U1, I1–I5, T1, T2)**: FR-006 names the accepted notations (now
+  including `X`) and excludes surrounding whitespace; trace-id correlation is tested for every
+  retrieval outcome (a found payment through the merchant's `traceparent`); the "not found" body
+  is compared whole; Definition of Done re-run including E2E (tasks T025–T029).
 
 ## Complexity Tracking
 
