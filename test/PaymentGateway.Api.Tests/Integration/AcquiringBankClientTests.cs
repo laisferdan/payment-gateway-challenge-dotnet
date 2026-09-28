@@ -8,10 +8,11 @@ using Microsoft.Extensions.Diagnostics.Metrics.Testing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Testing;
 
-using PaymentGateway.Api.Application;
-using PaymentGateway.Api.Domain;
-using PaymentGateway.Api.Infrastructure;
+using PaymentGateway.Api.Application.Ports;
+using PaymentGateway.Api.Domain.PaymentRequests;
+using PaymentGateway.Api.Infrastructure.AcquiringBank;
 using PaymentGateway.Api.Tests.Integration.Fixtures;
+using PaymentGateway.Api.Tests.TestData;
 
 using WireMock;
 using WireMock.RequestBuilders;
@@ -21,8 +22,7 @@ namespace PaymentGateway.Api.Tests.Integration;
 
 public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
 {
-    private static readonly PaymentRequest ValidRequest = PaymentRequest.Create(
-        "2222405343248877", 4, 2027, "GBP", 100, "123", new DateOnly(2026, 9, 26)).Request!;
+    private static readonly PaymentRequest ValidRequest = ValidPaymentRequest.Create();
 
     private readonly WireMockBankFixture _bank;
 

@@ -1,5 +1,5 @@
-using PaymentGateway.Api.Application;
-using PaymentGateway.Api.Domain;
+using PaymentGateway.Api.Application.Ports;
+using PaymentGateway.Api.Domain.Payments;
 
 namespace PaymentGateway.Api.Tests.Unit.Fakes;
 
@@ -9,13 +9,14 @@ public sealed class FakePaymentRepository : IPaymentRepository
 
     public IReadOnlyList<Payment> Payments => _payments;
 
-    public void Add(Payment payment)
+    public Task AddAsync(Payment payment)
     {
         _payments.Add(payment);
+        return Task.CompletedTask;
     }
 
-    public Payment? GetById(Guid id)
+    public Task<Payment?> GetByIdAsync(Guid id)
     {
-        return _payments.FirstOrDefault(payment => payment.Id == id);
+        return Task.FromResult(_payments.FirstOrDefault(payment => payment.Id == id));
     }
 }

@@ -1,8 +1,8 @@
 using System.Net;
 using System.Text.Json;
 
-using PaymentGateway.Api.Domain;
-using PaymentGateway.Api.Http;
+using PaymentGateway.Api.Domain.PaymentRequests;
+using PaymentGateway.Api.Http.Payments;
 using PaymentGateway.Api.Tests.Integration.Fixtures;
 
 namespace PaymentGateway.Api.Tests.Integration;
@@ -89,20 +89,20 @@ public class OpenApiDocumentTests : IClassFixture<WireMockBankFixture>
     }
 
     [Theory]
-    [InlineData("cardNumber")]
-    [InlineData("cvv")]
-    [InlineData("currency")]
-    [InlineData("amount")]
-    [InlineData("expiryMonth")]
-    [InlineData("expiryYear")]
-    public async Task PostPaymentRequest_EachField_HasTheDomainRuleAsDescription(string field)
+    [InlineData("cardNumber", PaymentField.CardNumber)]
+    [InlineData("cvv", PaymentField.Cvv)]
+    [InlineData("currency", PaymentField.Currency)]
+    [InlineData("amount", PaymentField.Amount)]
+    [InlineData("expiryMonth", PaymentField.ExpiryMonth)]
+    [InlineData("expiryYear", PaymentField.ExpiryYear)]
+    public async Task PostPaymentRequest_EachField_HasTheDomainRuleAsDescription(string jsonName, PaymentField field)
     {
         // Arrange
         JsonElement document = await GetDocumentAsync();
 
         // Act
         JsonElement property = document.GetProperty("components").GetProperty("schemas").GetProperty("PostPaymentRequest")
-            .GetProperty("properties").GetProperty(field);
+            .GetProperty("properties").GetProperty(jsonName);
 
         // Assert
         string expected = PaymentRuleSchemaFilter.RequiredPrefix + PaymentRequest.Messages.For(field);

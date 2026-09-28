@@ -1,0 +1,72 @@
+using PaymentGateway.Api.Domain.PaymentRequests;
+using PaymentGateway.Api.Domain.Payments;
+using PaymentGateway.Api.Tests.TestData;
+
+namespace PaymentGateway.Api.Tests.Unit.Domain.Payments;
+
+public class PaymentTests
+{
+    private const string CardNumber = "2222405343240012";
+    private const string Cvv = "987";
+
+    private static readonly PaymentRequest Request = ValidPaymentRequest.Create(CardNumber, "EUR", 2500, Cvv);
+
+    [Theory]
+    [InlineData(PaymentStatus.Authorized)]
+    [InlineData(PaymentStatus.Declined)]
+    public void Create_FromValidRequest_CopiesSafeFields(PaymentStatus status)
+    {
+        // Arrange
+
+        // Act
+        Payment payment = Payment.Create(Request, status);
+
+        // Assert
+        Assert.NotEqual(Guid.Empty, payment.Id);
+        Assert.Equal(status, payment.Status);
+        Assert.Equal("0012", payment.CardNumberLastFour);
+        Assert.Equal(4, payment.ExpiryMonth);
+        Assert.Equal(2027, payment.ExpiryYear);
+        Assert.Equal("EUR", payment.Currency);
+        Assert.Equal(2500, payment.Amount);
+    }
+
+    [Fact]
+    public void Create_WithRejectedStatus_Throws()
+    {
+        // Arrange
+
+        // Act
+        Exception? exception = Record.Exception(() => Payment.Create(Request, PaymentStatus.Rejected));
+
+        // Assert
+        Assert.IsType<ArgumentOutOfRangeException>(exception);
+    }
+
+    [Fact]
+    public void Create_Twice_AssignsDifferentIds()
+    {
+        // Arrange
+        Payment first = Payment.Create(Request, PaymentStatus.Authorized);
+
+        // Act
+        Payment second = Payment.Create(Request, PaymentStatus.Authorized);
+
+        // Assert
+        Assert.NotEqual(first.Id, second.Id);
+    }
+
+    [Fact]
+    public void ToString_Always_ExcludesCardNumberAndCvv()
+    {
+        // Arrange
+        Payment payment = Payment.Create(Request, PaymentStatus.Authorized);
+
+        // Act
+        string? text = payment.ToString();
+
+        // Assert
+        Assert.DoesNotContain(CardNumber, text);
+        Assert.DoesNotContain(Cvv, text);
+    }
+}

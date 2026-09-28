@@ -5,8 +5,8 @@ using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-using PaymentGateway.Api.Application;
-using PaymentGateway.Api.Domain;
+using PaymentGateway.Api.Application.Ports;
+using PaymentGateway.Api.Domain.Payments;
 using PaymentGateway.Api.Tests.Integration.Fixtures;
 
 using WireMock.RequestBuilders;
@@ -100,12 +100,12 @@ public class ErrorFormatTests : IClassFixture<WireMockBankFixture>
     {
         public const string Secret = "storage exploded";
 
-        public void Add(Payment payment)
+        public Task AddAsync(Payment payment)
         {
             throw new InvalidOperationException(Secret);
         }
 
-        public Payment? GetById(Guid id)
+        public Task<Payment?> GetByIdAsync(Guid id)
         {
             throw new InvalidOperationException(Secret);
         }

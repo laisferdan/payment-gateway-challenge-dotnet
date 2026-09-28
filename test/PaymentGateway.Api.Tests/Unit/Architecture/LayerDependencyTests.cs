@@ -1,7 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using PaymentGateway.Api.Infrastructure;
+using PaymentGateway.Api.Infrastructure.AcquiringBank;
 
 namespace PaymentGateway.Api.Tests.Unit.Architecture;
 
@@ -11,10 +11,10 @@ namespace PaymentGateway.Api.Tests.Unit.Architecture;
 /// </summary>
 public class LayerDependencyTests
 {
-    private const string Domain = "PaymentGateway.Api.Domain";
-    private const string Application = "PaymentGateway.Api.Application";
-    private const string Infrastructure = "PaymentGateway.Api.Infrastructure";
-    private const string Http = "PaymentGateway.Api.Http";
+    private const string Domain = Layers.Domain;
+    private const string Application = Layers.Application;
+    private const string Infrastructure = Layers.Infrastructure;
+    private const string Http = Layers.Http;
 
     [Theory]
     [InlineData(Domain, Application)]

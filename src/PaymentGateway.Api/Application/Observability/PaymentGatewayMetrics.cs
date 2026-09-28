@@ -1,0 +1,55 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+
+using PaymentGateway.Api.Application.Ports;
+
+namespace PaymentGateway.Api.Application.Observability;
+
+/// <summary>
+/// The gateway's instruments (meter <c>PaymentGateway</c>), viewable with <c>dotnet-counters</c>.
+/// </summary>
+public sealed class PaymentGatewayMetrics
+{
+    public const string MeterName = "PaymentGateway";
+
+    public const string Authorized = "authorized";
+    public const string Declined = "declined";
+    public const string Rejected = "rejected";
+    public const string BankUnavailable = "bank_unavailable";
+    public const string BankError = "bank_error";
+
+    private readonly Counter<long> _paymentOutcomes;
+    private readonly Histogram<double> _bankRequestDuration;
+
+    public PaymentGatewayMetrics(IMeterFactory meterFactory)
+    {
+        Meter meter = meterFactory.Create(MeterName);
+        _paymentOutcomes = meter.CreateCounter<long>(
+            "paymentgateway.payments.outcomes", "{payment}", "Payment requests by outcome.");
+        _bankRequestDuration = meter.CreateHistogram<double>(
+            "paymentgateway.bank.request.duration", "s", "Duration of acquiring bank calls.");
+    }
+
+    public void RecordOutcome(string result)
+    {
+        _paymentOutcomes.Add(1, new KeyValuePair<string, object?>("result", result));
+    }
+
+    public void RecordBankRequestDuration(TimeSpan duration, string outcome)
+    {
+        _bankRequestDuration.Record(duration.TotalSeconds, new KeyValuePair<string, object?>("outcome", outcome));
+    }
+
+    /// <summary>The tag value for the bank's answer, shared by the outcome and bank-duration instruments.</summary>
+    public static string OutcomeOf(BankAuthorizationResult result)
+    {
+        return result switch
+        {
+            BankAuthorizationResult.Authorized => Authorized,
+            BankAuthorizationResult.Declined => Declined,
+            BankAuthorizationResult.Failed { Kind: BankFailureKind.Unavailable } => BankUnavailable,
+            BankAuthorizationResult.Failed => BankError,
+            _ => throw new UnreachableException($"Unmapped bank result {result.GetType().Name}."),
+        };
+    }
+}

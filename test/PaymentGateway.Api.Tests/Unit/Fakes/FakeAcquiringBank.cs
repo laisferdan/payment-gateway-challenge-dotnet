@@ -1,5 +1,5 @@
-using PaymentGateway.Api.Application;
-using PaymentGateway.Api.Domain;
+using PaymentGateway.Api.Application.Ports;
+using PaymentGateway.Api.Domain.PaymentRequests;
 
 namespace PaymentGateway.Api.Tests.Unit.Fakes;
 

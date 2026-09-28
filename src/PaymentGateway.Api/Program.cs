@@ -3,9 +3,13 @@ using System.Text.Json.Serialization;
 
 using Microsoft.Extensions.Options;
 
-using PaymentGateway.Api.Application;
-using PaymentGateway.Api.Http;
-using PaymentGateway.Api.Infrastructure;
+using PaymentGateway.Api.Application.Observability;
+using PaymentGateway.Api.Application.Ports;
+using PaymentGateway.Api.Application.ProcessPayment;
+using PaymentGateway.Api.Application.RetrievePayment;
+using PaymentGateway.Api.Http.Payments;
+using PaymentGateway.Api.Infrastructure.AcquiringBank;
+using PaymentGateway.Api.Infrastructure.Persistence;
 
 // Hosting diagnostics logging is off (card numbers in paths), so this listener is what gives requests a trace id.
 ActivitySource.AddActivityListener(new ActivityListener
@@ -23,7 +27,7 @@ builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
 builder.Services.AddControllers(options => options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
     .AddJsonOptions(options => options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
     .ConfigureApiBehaviorOptions(options => options.InvalidModelStateResponseFactory = context =>
-        context.HttpContext.RequestServices.GetRequiredService<PaymentResultMapper>().ToUnreadableBodyResult(context));
+        context.HttpContext.RequestServices.GetRequiredService<InvalidModelStateResponder>().Respond(context));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
@@ -44,6 +48,7 @@ builder.Services.AddSingleton<PaymentGatewayMetrics>();
 builder.Services.AddScoped<ProcessPaymentService>();
 builder.Services.AddScoped<RetrievePaymentService>();
 builder.Services.AddSingleton<PaymentResultMapper>();
+builder.Services.AddSingleton<InvalidModelStateResponder>();
 
 builder.Services.AddHttpClient<IAcquiringBank, AcquiringBankClient>((services, client) =>
 {

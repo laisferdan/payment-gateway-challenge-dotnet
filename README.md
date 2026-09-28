@@ -107,14 +107,17 @@ were each shown to fail by temporarily breaking the behaviour.
 ## 6. Architecture
 
 One production project with the hexagon expressed as folders: dependencies point inwards only.
+Inside each layer, files are grouped by role (use case, domain concept, adapter, API resource),
+never by kind (`Services/`, `Repositories/`, …), so a new feature adds a folder instead of
+growing every existing one; architecture tests enforce both rules.
 
 ```mermaid
 flowchart LR
     Merchant -->|HTTP| Http
     subgraph PaymentGateway.Api
-        Http["Http/<br/>PaymentsController<br/>PaymentResultMapper<br/>DTOs"] --> Application
-        Application["Application/<br/>ProcessPaymentService, RetrievePaymentService<br/>ports: IAcquiringBank, IPaymentRepository"] --> Domain["Domain/<br/>PaymentRequest rules<br/>Payment"]
-        Infrastructure["Infrastructure/<br/>AcquiringBankClient<br/>InMemoryPaymentRepository"] -. implements .-> Application
+        Http["Http/<br/>Payments/: PaymentsController, DTOs,<br/>PaymentResultMapper, InvalidModelStateResponder"] --> Application
+        Application["Application/<br/>ProcessPayment/, RetrievePayment/ (one service per use case)<br/>Ports/: IAcquiringBank, IPaymentRepository<br/>Observability/"] --> Domain["Domain/<br/>PaymentRequests/: validation rules<br/>Payments/, CardData/"]
+        Infrastructure["Infrastructure/<br/>AcquiringBank/: AcquiringBankClient<br/>Persistence/: InMemoryPaymentRepository"] -. implements .-> Application
     end
     Infrastructure -->|POST /payments| Bank[(Bank simulator)]
 ```
@@ -135,7 +138,7 @@ sequenceDiagram
     else valid
         S->>B: RequestAuthorizationAsync (exactly once)
         alt bank decided
-            S->>R: Add(payment)
+            S->>R: AddAsync(payment)
             S-->>C: Processed(payment)
             C-->>M: 200 Authorized / Declined
         else bank failed
@@ -155,8 +158,8 @@ sequenceDiagram
     alt id is not a GUID
         C-->>M: 400 invalid id (store not searched)
     else Guid id
-        C->>S: Retrieve(id)
-        S->>R: GetById(id)
+        C->>S: RetrieveAsync(id)
+        S->>R: GetByIdAsync(id)
         alt found
             S-->>C: Found(payment)
             C-->>M: 200 (same fields as processing)
