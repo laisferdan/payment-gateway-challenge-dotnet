@@ -167,6 +167,8 @@ never an unexpected error.
   identifier and finds the same payment.
 - **Identifier with a wrong length, non-hex characters (e.g. `g`), misplaced hyphens or mismatched
   brackets**: invalid identifier naming `id`.
+- **Otherwise valid identifier with leading or trailing whitespace**: invalid identifier naming
+  `id` – whitespace is refused, never trimmed into validity (Constitution Principle IX).
 - **Empty identifier or only whitespace**: never treated as "retrieve all payments", never a
   payment and never an unexpected error; the merchant receives an error response (see Notes for
   `/speckit-plan`).
@@ -314,8 +316,9 @@ Principle IX)*
 - **Empty or whitespace-only identifier**: decide and document the resulting response (an empty
   path segment may not reach the retrieval action at all), keeping it an error that is never a
   payment, a list or an unexpected error.
-- **Surrounding whitespace**: decide whether an otherwise valid GUID with leading or trailing
-  whitespace is accepted (the platform's GUID parser tolerates it) or refused, and document it.
+- **Surrounding whitespace** *(resolved 2026-09-27)*: refused as an invalid identifier – the
+  platform's GUID parser tolerates it, but Principle IX forbids trimming a value into validity
+  (research R1; Edge Cases).
 - **Concurrency (FR-012)**: state how it is verified – relying on the thread-safe store's
   guarantee, or one concurrent test (UC1 research R14 has no repository concurrency test).
 

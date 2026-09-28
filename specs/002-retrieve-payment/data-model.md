@@ -1,13 +1,15 @@
 # Data Model: Retrieve a Payment's Details (UC2)
 
 **Feature**: [spec.md](spec.md) | **Research**: [research.md](research.md) | **Date**: 2026-09-26
+(revised 2026-09-27 – constitution 1.1.0 role folders, async port, `InvalidModelStateResponder`,
+whitespace refused)
 
 UC2 adds no entity and changes no field. It reads the `Payment` recorded by UC1 and adds one
-port method, one application service with its result type, three log events and one HTTP action.
-Everything else is defined in [UC1's data model](../001-process-payment/data-model.md) and is
-referenced, not repeated.
+port method, one application service with its result type, three log events, one HTTP action and
+its id binder. Everything else is defined in [UC1's data model](../001-process-payment/data-model.md)
+and is referenced, not repeated.
 
-## Domain (`Domain/`) – unchanged
+## Domain (`Domain/Payments/`) – unchanged
 
 | Type | Use in UC2 |
 |---|---|
@@ -16,24 +18,25 @@ referenced, not repeated.
 
 There are no state transitions: retrieval never changes a payment (FR-009).
 
-## Application (`Application/`)
+## Application
 
-### Driven port – `IPaymentRepository` (XML-documented) – extended
+### Driven port – `Application/Ports/IPaymentRepository` (XML-documented) – extended
 
 | Member | Added by | Contract |
 |---|---|---|
-| `Add(Payment payment)` | UC1 | records a decided payment |
-| `GetById(Guid id) → Payment?` | **UC2** | returns the payment recorded under `id`, or `null` when none exists; no side effects; safe to call concurrently with `Add` |
+| `AddAsync(Payment payment) → Task` | UC1 | records a decided payment |
+| `GetByIdAsync(Guid id) → Task<Payment?>` | **UC2** | returns the payment recorded under `id`, or `null` when none exists; no side effects; safe to call concurrently with `AddAsync` |
 
-### RetrievePaymentService (application service – UC2)
+### RetrievePaymentService (`Application/RetrievePayment/` – UC2)
 
-`Retrieve(Guid id) → RetrievePaymentResult`
+`RetrieveAsync(Guid id) → Task<RetrievePaymentResult>`
 
 Dependencies: `IPaymentRepository`, `ILogger<RetrievePaymentService>`. **No `IAcquiringBank`**
 (FR-010), **no metrics** (Clarifications Q5), no `TimeProvider` (nothing is time-dependent).
-Concrete class, no interface (UC1 research R11).
+Concrete class, no interface (UC1 research R11). Asynchronous because the port is (research R6).
+Its log partial `RetrievePaymentService.Log.cs` sits next to it.
 
-### RetrievePaymentResult (output – closed set)
+### RetrievePaymentResult (`Application/RetrievePayment/` – output, closed set)
 
 | Case | Carries | Meaning | HTTP (research) |
 |---|---|---|---|
@@ -48,10 +51,10 @@ and never reaches the service (research R4).
 ```text
 GET /api/payments/{id}
   │
-  ├─ id is not a GUID in any form ──► Http: log PaymentIdInvalid ──► 400 invalid id
-  │                                    (service NOT called, store NOT searched)
-  └─ Guid id ──► RetrievePaymentService.Retrieve(id)
-                   └─ IPaymentRepository.GetById(id)
+  ├─ id is not a GUID in any form, or has ──► Http: log PaymentIdInvalid ──► 400 invalid id
+  │  surrounding whitespace                   (service NOT called, store NOT searched)
+  └─ Guid id ──► RetrievePaymentService.RetrieveAsync(id)
+                   └─ IPaymentRepository.GetByIdAsync(id)
                         ├─ payment ──► log PaymentRetrieved ──► Found(payment)  ──► 200
                         └─ null    ──► log PaymentNotFound  ──► NotFound        ──► 404
 ```
@@ -62,19 +65,20 @@ GET /api/payments/{id}
 |---|---|---|---|---|
 | 3000 | `PaymentRetrieved` | Information | `paymentId`, `status` | `RetrievePaymentService` |
 | 3001 | `PaymentNotFound` | Information | `paymentId` (parsed GUID) | `RetrievePaymentService` |
-| 3002 | `PaymentIdInvalid` | Information | – (raw value never logged) | `Http/` invalid-model response factory |
+| 3002 | `PaymentIdInvalid` | Information | – (raw value never logged) | `Http/Payments/InvalidModelStateResponder` |
 
 Every entry also carries `TraceId`/`SpanId` from the request scope. UC1's events 1000–2001 are
 unchanged. No retrieval metric; `PaymentGatewayMetrics` is unchanged.
 
-## Infrastructure (`Infrastructure/`)
+## Infrastructure (`Infrastructure/Persistence/`)
 
 ### InMemoryPaymentRepository – extended
 
-`GetById` → `ConcurrentDictionary<Guid, Payment>.TryGetValue`. The key is the parsed `Guid`, so
-letter case and textual notation of the merchant's id cannot affect the lookup (FR-006).
+`GetByIdAsync` → `ConcurrentDictionary<Guid, Payment>.TryGetValue`, returned as a completed task.
+The key is the parsed `Guid`, so letter case and textual notation of the merchant's id cannot
+affect the lookup (FR-006).
 
-## Http (`Http/`)
+## Http (`Http/Payments/`)
 
 HTTP contract – see [contracts/payments-api.yaml](contracts/payments-api.yaml).
 
@@ -82,10 +86,19 @@ HTTP contract – see [contracts/payments-api.yaml](contracts/payments-api.yaml)
 
 | Item | Value |
 |---|---|
+| Action | `RetrievePaymentAsync` |
 | Route | `GET /api/payments/{id}` – **no `:guid` constraint** (research R1) |
-| Parameter | `Guid id` from the route; accepted forms `D`, `N`, `B`, `P`, `X`, any letter case, surrounding whitespace ignored |
+| Parameter | `[PaymentIdFromRoute] Guid id`; accepted forms `D`, `N`, `B`, `P`, `X`, any letter case; surrounding whitespace **refused** (research R1) |
+| Invalid request | `[RespondsToInvalidRequest(InvalidRequestResponse.InvalidPaymentId)]` |
 | Depends on | `RetrievePaymentService`, `PaymentResultMapper` |
 | Responses | `200` `PaymentResponse` · `400` `ValidationProblemDetails` · `404` `ProblemDetails` · `500` `ProblemDetails` (`[ProducesResponseType]`, XML docs) |
+
+### PaymentIdModelBinder and PaymentIdFromRouteAttribute – new
+
+| Type | Responsibility |
+|---|---|
+| `PaymentIdModelBinder` | reads the `id` route value as sent; binds it when it has no surrounding whitespace and `Guid.TryParse` accepts it; otherwise adds a model error on `id` (message `PaymentResultMapper.InvalidIdMessage`), which triggers the automatic `400` |
+| `PaymentIdFromRouteAttribute` | a `ModelBinderAttribute` selecting `PaymentIdModelBinder` **and** keeping the binding source `Path`, so the OpenAPI document lists `id` as a required `uuid` path parameter |
 
 ### PaymentResponse (UC1) – reused unchanged
 
@@ -93,36 +106,38 @@ HTTP contract – see [contracts/payments-api.yaml](contracts/payments-api.yaml)
 `expiryYear`, `currency`, `amount`. Built from `Payment` by the **same mapping** UC1 uses, so the
 retrieval response equals the processing response by construction (FR-003, research R2).
 
-### PaymentResultMapper – extended
+### PaymentResultMapper and InvalidModelStateResponder – extended
 
-| Input | Output |
-|---|---|
-| `RetrievePaymentResult.Found(payment)` | `200` + `PaymentResponse` |
-| `RetrievePaymentResult.NotFound` | `404` `ProblemDetails`: `title` "Payment not found", `detail` "No payment exists with the given id.", `traceId`; the id is not echoed (R3) |
-| invalid model state on the **retrieval** action (from `PaymentResultMapper.ToUnreadableBodyResult`) | `400` `ValidationProblemDetails`: `title` "Invalid payment id", `errors.id` = fixed message (never the submitted value), `traceId`, **no `paymentStatus`** (R4) |
-| invalid model state on the **processing** action (from `PaymentResultMapper.ToUnreadableBodyResult`) | UC1's Rejected body, unchanged (`paymentStatus: "Rejected"`) |
+| Input | Handled by | Output |
+|---|---|---|
+| `RetrievePaymentResult.Found(payment)` | `PaymentResultMapper.ToActionResult` | `200` + `PaymentResponse` |
+| `RetrievePaymentResult.NotFound` | `PaymentResultMapper.ToActionResult` | `404` `ProblemDetails`: `title` "Payment not found", `detail` "No payment exists with the given id.", `traceId`; the id is not echoed (R3) |
+| invalid model state, action marked `InvalidPaymentId` (retrieval) | `InvalidModelStateResponder` → logs `PaymentIdInvalid` → `PaymentResultMapper.InvalidPaymentId` | `400` `ValidationProblemDetails`: `title` "Invalid payment id", `errors.id` = fixed message (never the submitted value), `traceId`, **no `paymentStatus`** (R4) |
+| invalid model state, action marked `PaymentRejected` (processing) | `InvalidModelStateResponder` → `PaymentResultMapper.PaymentRejected` | UC1's Rejected body, unchanged (`paymentStatus: "Rejected"`) |
+| invalid model state, action without the attribute | `InvalidModelStateResponder` → `PaymentResultMapper.ValidationProblem` | plain `400` `ValidationProblemDetails` |
 
-The action-aware branching (processing vs any other action) is UC1's
-`PaymentResultMapper.ToUnreadableBodyResult` (UC1 research R3); UC2 adds the retrieval branch
-there, and it logs `PaymentIdInvalid`. The action is identified by
-`ControllerActionDescriptor.MethodInfo.Name` compared with `nameof` of the controller method (not
-`ActionName`, which drops the `Async` suffix).
+`InvalidModelStateResponder` is wired as `ApiBehaviorOptions.InvalidModelStateResponseFactory`
+in `Program.cs` (UC1). It decides from the target action's `[RespondsToInvalidRequest]`
+attribute; `PaymentResultMapper` remains the single builder of response bodies.
 
 ### Constants (named, no magic strings – Principle VI)
 
 | Constant | Value | Where |
 |---|---|---|
-| id route parameter / error key | `id` | `PaymentsController` |
-| invalid-id message | `The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6.` | `PaymentResultMapper` |
-| not-found title / detail | `Payment not found` / `No payment exists with the given id.` | `PaymentResultMapper` |
+| invalid-id title / error key | `Invalid payment id` / `id` | `PaymentResultMapper` (private) |
+| invalid-id message | `The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6.` | `PaymentResultMapper.InvalidIdMessage` (public – also used by `PaymentIdModelBinder`) |
+| not-found title / detail | `Payment not found` / `No payment exists with the given id.` | `PaymentResultMapper` (private) |
 
 ## Composition (`Program.cs`)
 
 | Change | Why |
 |---|---|
-| register `RetrievePaymentService` (scoped or singleton – stateless) | UC2 use case |
+| register `RetrievePaymentService` (scoped) | UC2 use case |
 
-Relied on, **delivered by UC1** (constitution 1.0.2): `app.UseStatusCodePages()` – the `405` for
-an empty id is a `ProblemDetails` with `traceId` (research R5); `Microsoft.AspNetCore` and
+`PaymentIdModelBinder` needs no registration: the attribute on the parameter selects it.
+
+Relied on, **delivered by UC1**: `app.UseStatusCodePages()` – the `405` for an empty id is a
+`ProblemDetails` with `traceId` (research R5); `Microsoft.AspNetCore` and
 `System.Net.Http.HttpClient` at `Warning`, no HTTP logging – a card number pasted into the path
-is never logged by the framework (research R8). No new configuration keys.
+is never logged by the framework (research R8); `InvalidModelStateResponder` registered and wired.
+No new configuration keys.

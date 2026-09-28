@@ -52,8 +52,8 @@ public sealed class PaymentsController : ControllerBase
     /// <summary>Retrieves a previously processed payment.</summary>
     /// <remarks>
     /// Any GUID notation the platform parses is accepted – canonical, without hyphens, in braces
-    /// or in parentheses – in any letter case, with surrounding whitespace ignored. Retrieval has
-    /// no side effects and never contacts the acquiring bank.
+    /// or in parentheses – in any letter case. Surrounding whitespace is refused, never trimmed.
+    /// Retrieval has no side effects and never contacts the acquiring bank.
     /// </remarks>
     /// <param name="id">The payment id returned when the payment was processed.</param>
     /// <response code="200">The payment, with exactly the same fields as the processing response.</response>
@@ -69,7 +69,7 @@ public sealed class PaymentsController : ControllerBase
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest, PaymentResultMapper.ProblemJson)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound, PaymentResultMapper.ProblemJson)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status500InternalServerError, PaymentResultMapper.ProblemJson)]
-    public async Task<IActionResult> RetrievePaymentAsync(Guid id)
+    public async Task<IActionResult> RetrievePaymentAsync([PaymentIdFromRoute] Guid id)
     {
         RetrievePaymentResult result = await _retrievePaymentService.RetrieveAsync(id);
         return _mapper.ToActionResult(result, HttpContext);

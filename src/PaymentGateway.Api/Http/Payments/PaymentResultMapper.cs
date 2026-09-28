@@ -19,6 +19,7 @@ namespace PaymentGateway.Api.Http.Payments;
 public sealed class PaymentResultMapper
 {
     public const string ProblemJson = "application/problem+json";
+    public const string InvalidIdMessage = "The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6.";
 
     private const string BadRequestType = "https://tools.ietf.org/html/rfc9110#section-15.5.1";
     private const string RejectedTitle = "Payment rejected";
@@ -31,7 +32,6 @@ public sealed class PaymentResultMapper
     private const string NotFoundDetail = "No payment exists with the given id.";
     private const string InvalidIdTitle = "Invalid payment id";
     private const string InvalidIdField = "id";
-    private const string InvalidIdMessage = "The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6.";
 
     private readonly ProblemDetailsOptions _problemDetailsOptions;
 

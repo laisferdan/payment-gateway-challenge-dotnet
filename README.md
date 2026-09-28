@@ -98,7 +98,7 @@ Every behaviour was driven test-first (Red → Green → Refactor). Tests are na
 | Level | What it uses | What it proves | Risks it covers |
 |---|---|---|---|
 | **Unit** (`test/…/Unit`) | domain types and `ProcessPaymentService` with hand-written fakes; fixed clock (`FakeTimeProvider`); `FakeLogger`; `MetricCollector` | every validation rule at its boundaries (`[Theory]`: card 13/14/19/20 digits, non-ASCII digits, CVV 2/3/4/5, month 0/1/12/13, year last/this/9999/10000, current vs previous month, amount 0/1, currency `GBP`/`gbp`/`JPY`); no trimming or coercion; all errors reported together; each use-case outcome; a rejected request never reaches the bank; a valid one reaches it exactly once; outcome logs and counter; masked `ToString()` on every type carrying card data | validation boundaries; card data leakage; a rejected payment reaching the bank |
-| **Integration** (`test/…/Integration`) | `WebApplicationFactory<Program>` – real HTTP pipeline, real bank adapter and repository; only the bank is replaced, by WireMock | `200` Authorized/Declined; `400` Rejected (rules and unreadable bodies); `502`/`503` for every bank failure (400, 503, other status, unreadable or incomplete body, timeout, connection refused) with a single call; error shape and `traceId` (including routing `404`/`405`); `traceId` equals the log entry's `TraceId`; no card number or CVV in any response or log, including a card number sent in a request **path** or **body**; startup validation; `/health`; the OpenAPI document and the Swagger flag; **retrieval** (`GET /api/payments/{id}`) – a `GET` after `POST` returns a body **equal** to the `POST` body; every accepted GUID notation (canonical, without hyphens, in braces, in parentheses, uppercase, surrounding whitespace) finds the same payment; repeated `GET`s are identical; **no** request reaches WireMock during `GET`; an unknown or all-zeros id returns `404` with a `traceId` correlated to the log; a malformed id (including a card-like value) returns `400` naming `id` with a fixed message, never `404`; the empty-id route returns `405` | a bank failure misreported as Declined; drift in the bank contract; card data leakage through framework logging; inconsistent errors; misconfiguration; a malformed retrieval id answered as "not found"; drift between the processing and retrieval representations of a payment |
+| **Integration** (`test/…/Integration`) | `WebApplicationFactory<Program>` – real HTTP pipeline, real bank adapter and repository; only the bank is replaced, by WireMock | `200` Authorized/Declined; `400` Rejected (rules and unreadable bodies); `502`/`503` for every bank failure (400, 503, other status, unreadable or incomplete body, timeout, connection refused) with a single call; error shape and `traceId` (including routing `404`/`405`); `traceId` equals the log entry's `TraceId`; no card number or CVV in any response or log, including a card number sent in a request **path** or **body**; startup validation; `/health`; the OpenAPI document and the Swagger flag; **retrieval** (`GET /api/payments/{id}`) – a `GET` after `POST` returns a body **equal** to the `POST` body; every accepted GUID notation (canonical, without hyphens, in braces, in parentheses, uppercase) finds the same payment; repeated `GET`s are identical; **no** request reaches WireMock during `GET`; an unknown or all-zeros id returns `404` with a `traceId` correlated to the log; a malformed id (including a card-like value, or a valid GUID with surrounding whitespace) returns `400` naming `id` with a fixed message, never `404`; the OpenAPI document shows `id` as a required `uuid` path parameter; the empty-id route returns `405` | a bank failure misreported as Declined; drift in the bank contract; card data leakage through framework logging; inconsistent errors; misconfiguration; a malformed retrieval id answered as "not found"; drift between the processing and retrieval representations of a payment |
 | **E2E** (`test/…/EndToEnd`, `Category=E2E`) | the gateway in-process against the real simulator, real clock and logging | Authorized, Declined and Bank unavailable journeys; **process then retrieve** for an Authorized and a Declined payment | drift between our bank contract and the real simulator |
 
 Guard tests that passed on first run (because an earlier step already delivered the behaviour)
@@ -234,8 +234,8 @@ processing `400`, because no payment was attempted
 ```
 
 Any GUID notation the platform parses is accepted for `{id}` – canonical, without hyphens, in
-braces, in parentheses – in any letter case, with surrounding whitespace ignored; the response
-always returns `id` in canonical lowercase form.
+braces, in parentheses – in any letter case; the response always returns `id` in canonical
+lowercase form. An id with leading or trailing whitespace is refused with `400`, never trimmed.
 
 ## 8. Observability
 
@@ -314,10 +314,13 @@ not make the gateway look dead.
 - **Latency (95 % under 2 s)** is checked manually with `curl -w "%{time_total}"`, and observed in
   production through `http.server.request.duration`; there is no load test.
 - **Retrieval accepts every GUID notation** the platform parses – canonical, without hyphens, in
-  braces, in parentheses – case-insensitively, with surrounding whitespace ignored: the route
-  parameter is bound as a plain `Guid` with **no `:guid` route constraint**, so a malformed id is
-  matched by the action (and answered `400` naming `id`) rather than becoming an unmatched route
-  (which would be an indistinguishable `404`).
+  braces, in parentheses – case-insensitively. The route has **no `:guid` constraint**, so a
+  malformed id is matched by the action (and answered `400` naming `id`) rather than becoming an
+  unmatched route (which would be an indistinguishable `404`).
+- **Surrounding whitespace is refused, not trimmed.** The platform's GUID parser ignores it, but the
+  constitution forbids trimming a value into validity (Principle IX), and the gateway never issues
+  an id with whitespace. A small `PaymentIdModelBinder` binds the route value as sent: a valid GUID
+  with leading or trailing whitespace gets the same `400` as any other malformed id.
 - **Malformed retrieval id is `400`, never `404`**, and carries no `paymentStatus` (unlike the
   processing `400`), because no payment was attempted; the fixed message never echoes the
   submitted value, since it may be a pasted card number.

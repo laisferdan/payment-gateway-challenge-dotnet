@@ -91,7 +91,6 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
         (Guid guid) => guid.ToString("N"),
         (Guid guid) => Uri.EscapeDataString(guid.ToString("B")),
         (Guid guid) => guid.ToString("P"),
-        (Guid guid) => $"{Uri.EscapeDataString(" ")}{guid:D}{Uri.EscapeDataString(" ")}",
     };
 
     [Fact]
@@ -193,6 +192,9 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
     [InlineData("9c858901-8a57-4791-81fe-4c455b099bg9")] // non-hex 'g'
     [InlineData("9c8589018a57-4791-81fe-4c455b099bc9")] // misplaced hyphen
     [InlineData("{9c858901-8a57-4791-81fe-4c455b099bc9")] // mismatched bracket
+    [InlineData(" 9c858901-8a57-4791-81fe-4c455b099bc9 ")] // surrounding spaces – never trimmed into validity
+    [InlineData("9c858901-8a57-4791-81fe-4c455b099bc9 ")] // trailing space
+    [InlineData("\t9c858901-8a57-4791-81fe-4c455b099bc9")] // leading tab
     [InlineData("4111111111111111")] // card-like
     public async Task Get_WhenIdIsNotAGuid_Returns400NamingTheIdField(string invalidId)
     {

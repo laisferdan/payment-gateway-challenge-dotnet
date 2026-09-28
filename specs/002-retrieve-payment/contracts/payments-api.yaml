@@ -26,8 +26,8 @@ paths:
           description: >
             The payment id returned when the payment was processed. Any GUID notation is
             accepted – canonical (8-4-4-4-12), 32 digits without hyphens, in braces {…}, in
-            parentheses (…), or the hexadecimal {0x…} form – in any letter case; surrounding
-            whitespace is ignored. Any other value is refused with 400.
+            parentheses (…), or the hexadecimal {0x…} form – in any letter case. Surrounding
+            whitespace is refused, never trimmed. Any other value is refused with 400.
           schema:
             type: string
             format: uuid

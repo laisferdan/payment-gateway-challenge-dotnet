@@ -3,38 +3,50 @@
 **Feature**: [spec.md](spec.md) | **Plan**: [plan.md](plan.md) | **Date**: 2026-09-26
 
 UC2 builds on the design delivered by UC1 ([UC1 research](../001-process-payment/research.md),
-R1–R17): one production project with `Domain/`, `Application/`, `Infrastructure/`, `Http/`;
-`PaymentResultMapper` as the single result → HTTP translator; `AddProblemDetails()` with the
-`traceId` customisation; JSON console logging with scopes; the in-memory repository. Only the
-decisions UC2 adds or changes are recorded here. Format: Decision / Rationale / Alternatives.
+R1–R17): one production project with `Domain/`, `Application/`, `Infrastructure/`, `Http/`, each
+split into role folders; `PaymentResultMapper` as the single builder of response bodies;
+`AddProblemDetails()` with the `traceId` customisation; JSON console logging with scopes; the
+in-memory repository. Only the decisions UC2 adds or changes are recorded here. Format:
+Decision / Rationale / Alternatives.
 
-Aligned with constitution **1.0.2**: UC1 now delivers the action-aware invalid-model factory
-(`paymentStatus` only on `POST /api/payments`), `UseStatusCodePages()`, the framework log-level
-rule and the card-number-in-path/body log test (UC1 research R3, R5, R15). UC2 relies on them.
+Aligned with constitution **1.1.0**: UC1 delivers `Http/Payments/InvalidModelStateResponder`
+(the invalid-model response factory; `paymentStatus` only on `POST /api/payments`),
+`UseStatusCodePages()`, the framework log-level rule and the card-number-in-path/body log test
+(UC1 research R3, R5, R15). UC2 relies on them. Code lives in role folders (Principle II 1.1.0):
+`Application/RetrievePayment/`, `Application/Ports/`, `Infrastructure/Persistence/`,
+`Http/Payments/`.
 
 ## R1. Endpoint and identifier binding (FR-001, FR-005, FR-006)
 
-- **Decision**: `GET /api/payments/{id}` on the existing `Http/PaymentsController`. The route
-  template is **`{id}` without a `:guid` constraint**, and the action parameter is **`Guid id`**.
-  ASP.NET Core model binding converts the route value with the platform's GUID parser, which
-  accepts every GUID text form – canonical `D` (`8-4-4-4-12`), `N` (32 digits, no hyphens), `B`
-  (`{…}`), `P` (`(…)`) and `X` (`{0x…,…}`) – case-insensitively, and ignores leading/trailing
-  whitespace. Anything else fails binding and becomes the invalid-identifier outcome (R4).
+- **Decision**: `GET /api/payments/{id}` on the existing `Http/Payments/PaymentsController`. The
+  route template is **`{id}` without a `:guid` constraint**, and the action parameter is
+  **`[PaymentIdFromRoute] Guid id`**. `PaymentIdModelBinder` reads the route value **as sent**
+  and parses it with the platform's GUID parser, which accepts every GUID text form – canonical
+  `D` (`8-4-4-4-12`), `N` (32 digits, no hyphens), `B` (`{…}`), `P` (`(…)`) and `X`
+  (`{0x…,…}`) – case-insensitively. A value with leading or trailing whitespace, or anything the
+  parser refuses, fails binding and becomes the invalid-identifier outcome (R4).
+  `PaymentIdFromRouteAttribute` is a `ModelBinderAttribute` that also pins the binding source
+  to the route: a plain `[ModelBinder]` makes the source "custom", and the OpenAPI document then
+  lists `id` as a query parameter.
 - **Rationale**: Clarifications Q2/Q3 – any form the platform parses is the same identifier, and
   a GUID-typed parameter gives this validation for free. A `:guid` **route constraint** would make
   a malformed id an *unmatched route*, answered `404` – indistinguishable from "payment not found",
   which FR-005 forbids. Without the constraint the action is matched and binding reports the
   failure on `id`.
-- **Surrounding whitespace** (spec "Notes for `/speckit-plan`"): **accepted**. An id such as
-  `%203fa85f64-…%20` is parsed as the same GUID. This follows Q2 ("any form the platform
-  parses"); whitespace carries no meaning in a GUID, so this interprets the same value rather than
-  coercing an invalid one. Documented in the README's Design Decisions.
+- **Surrounding whitespace** (spec "Notes for `/speckit-plan`"; revised 2026-09-27): **refused**.
+  An id such as `%203fa85f64-…%20` gets the `400` invalid-identifier outcome. The platform's
+  GUID parser trims it, but Principle IX forbids values being "trimmed … into validity", and the
+  gateway never issues an id with whitespace, so no legitimate caller is affected. (The first
+  revision accepted it as "interpretation"; `/speckit-analyze` finding C1 flagged the conflict
+  with IX.) Documented in the README's Design Decisions.
 - **Alternatives**:
   - `{id:guid}` constraint (the template's choice) – rejected: malformed ids become `404`.
-  - `string id` + `Guid.TryParseExact(id, "D")` in the controller – rejected by Q2 (canonical form
-    only) and it hand-writes what binding already does.
-  - A custom model binder that refuses whitespace – rejected: extra code to refuse a value that
-    denotes the same GUID.
+  - A plain `Guid id` bound by the default binder (the first revision) – rejected: it silently
+    trims surrounding whitespace (C1).
+  - `string id` + parsing in the controller – rejected: bypasses `[ApiController]`'s automatic
+    `400` and the invalid-model responder, so the error path would be hand-written twice.
+  - `[FromRoute, ModelBinder<PaymentIdModelBinder>]` – rejected: which attribute supplies the
+    binding source depends on attribute order; the dedicated attribute states it once.
 
 ## R2. Found response (FR-002, FR-003, FR-015)
 
@@ -70,12 +82,15 @@ rule and the card-number-in-path/body log test (UC1 research R3, R5, R15). UC2 r
   `title` "Invalid payment id", `errors: { "id": ["The payment id must be a GUID, e.g. 3fa85f64-5717-4562-b3fc-2c963f66afa6."] }`,
   `traceId`, and **no `paymentStatus`** member.
   - **Mechanism**: binding failure → `[ApiController]` automatic `400` →
-    `ApiBehaviorOptions.InvalidModelStateResponseFactory` → `PaymentResultMapper.ToUnreadableBodyResult`.
-    UC1 already makes this method action-aware (UC1 R3, identified by
-    `ControllerActionDescriptor.MethodInfo.Name`): `paymentStatus: "Rejected"` only for the
-    processing action, a plain `ValidationProblemDetails` for any other. UC2 adds one branch: for
-    the **retrieval** action the mapper uses the title "Invalid payment id" and the fixed `id`
-    message below, and logs `PaymentIdInvalid` (R8).
+    `ApiBehaviorOptions.InvalidModelStateResponseFactory` →
+    **`InvalidModelStateResponder.Respond`**. The responder reads the target action's
+    `[RespondsToInvalidRequest(InvalidRequestResponse.…)]` attribute: `PaymentRejected` on the
+    processing action (UC1, `paymentStatus: "Rejected"`), **`InvalidPaymentId`** on the retrieval
+    action (UC2), and a plain `ValidationProblemDetails` for any action without the attribute. For
+    `InvalidPaymentId` it logs `PaymentIdInvalid` (R8) and asks
+    `PaymentResultMapper.InvalidPaymentId` for the body – the mapper stays the single builder of
+    response bodies. An attribute declares each action's intent explicitly; comparing
+    `MethodInfo.Name` (the first revision's design) was brittle to renames and the `Async` suffix.
   - **Message**: a fixed text that **never echoes the submitted value** – a merchant may paste
     anything into the path, including a card number (Principle VIII). The framework's default
     message (`The value '…' is not valid.`) is therefore not used.
@@ -108,23 +123,29 @@ rule and the card-number-in-path/body log test (UC1 research R3, R5, R15). UC2 r
 
 ## R6. Application service and result (Constitution III, VI)
 
-- **Decision**: `Application/RetrievePaymentService` – concrete, no interface (UC1 R11):
-  `Retrieve(Guid id) → RetrievePaymentResult`, with `RetrievePaymentResult` = `Found(Payment)` |
-  `NotFound`. Dependencies: `IPaymentRepository`, `ILogger<RetrievePaymentService>` only – it has
-  **no `IAcquiringBank` dependency**, so it cannot contact the bank (FR-010). Synchronous: the
-  only port it calls is an in-memory lookup with no I/O. The invalid-id outcome is not a member
-  because a malformed id never reaches the service (R4).
+- **Decision**: `Application/RetrievePayment/RetrievePaymentService` – concrete, no interface
+  (UC1 R11): `RetrieveAsync(Guid id) → Task<RetrievePaymentResult>`, with
+  `RetrievePaymentResult` = `Found(Payment)` | `NotFound`. Dependencies: `IPaymentRepository`,
+  `ILogger<RetrievePaymentService>` only – it has **no `IAcquiringBank` dependency**, so it cannot
+  contact the bank (FR-010). **Asynchronous**, because the port it calls is: storage is I/O
+  whatever adapter sits behind the port, and the in-memory adapter is a stand-in for a persistent
+  store (a production next step), so an async port keeps that swap from changing the core's
+  signatures. The in-memory adapter returns completed tasks – no runtime cost. The invalid-id
+  outcome is not a member because a malformed id never reaches the service (R4).
 - **Rationale**: one concrete application service per use case (Principle III); "not found" is an
   expected outcome and is modelled as a result, not an exception or `null` leaking into `Http/`
   (Principle VI); logging of the outcome lives in the use case, like UC1.
 - **Alternatives**: the controller calling the repository directly (no use-case boundary; logging
   in the adapter); `Payment?` as the service result (a `null` that `Http/` must interpret);
-  `async` methods (no asynchronous work exists – YAGNI).
+  synchronous methods (the first revision's choice – replaced in commit 7dc4c59, because a
+  synchronous port bakes the in-memory adapter's nature into the core's contract).
 
 ## R7. Repository read and concurrency (FR-011, FR-012)
 
-- **Decision**: `IPaymentRepository` gains **`GetById(Guid id) → Payment?`** (XML-documented);
-  `InMemoryPaymentRepository` implements it with `ConcurrentDictionary.TryGetValue`. The key is
+- **Decision**: `Application/Ports/IPaymentRepository` gains
+  **`GetByIdAsync(Guid id) → Task<Payment?>`** (XML-documented);
+  `Infrastructure/Persistence/InMemoryPaymentRepository` implements it with
+  `ConcurrentDictionary.TryGetValue`. The key is
   the parsed `Guid`, so letter case and notation cannot affect the lookup (FR-006).
   **FR-012 is met by design**: `Payment` is immutable (UC1 data model) and is added to the
   dictionary only after it is fully built, and `ConcurrentDictionary` reads are atomic and
@@ -145,7 +166,7 @@ rule and the card-number-in-path/body log test (UC1 research R3, R5, R15). UC2 r
   |---|---|---|---|
   | 3000 | `PaymentRetrieved` | `paymentId`, `status` | `RetrievePaymentService` |
   | 3001 | `PaymentNotFound` | `paymentId` (the parsed GUID) | `RetrievePaymentService` |
-  | 3002 | `PaymentIdInvalid` | – (the raw value is **never** logged) | `Http/PaymentResultMapper.ToUnreadableBodyResult`, via its constructor-injected `ILogger<PaymentResultMapper>` |
+  | 3002 | `PaymentIdInvalid` | – (the raw value is **never** logged) | `Http/Payments/InvalidModelStateResponder`, via its constructor-injected `ILogger<InvalidModelStateResponder>` |
 
   **No retrieval metric** (Q5); `PaymentGatewayMetrics` is unchanged. Logging a not-found id is
   safe (it is a parsed GUID and cannot carry card data) and is what enumeration monitoring – a
@@ -188,7 +209,7 @@ rule and the card-number-in-path/body log test (UC1 research R3, R5, R15). UC2 r
     `[ProducesResponseType]` for `200` (`PaymentResponse`), `400`
     (`ValidationProblemDetails`), `404` (`ProblemDetails`) and `500` (`ProblemDetails`).
   - README (UC1 plan "README plan") updated: API usage (retrieval examples), Design Decisions
-    (R1 accepted forms and whitespace, R2 one representation, R4 invalid id without
+    (R1 accepted forms, whitespace refused, R2 one representation, R4 invalid id without
     `paymentStatus`, R5 `405` for an empty id, Q7 last four digits instead of a "masked card
     number", no ownership check, no retrieval metric, in-memory storage lost on restart),
     Observability (events 3000–3002), Test strategy (UC2 rows), Production next steps
@@ -205,9 +226,9 @@ rule and the card-number-in-path/body log test (UC1 research R3, R5, R15). UC2 r
 
   | Level | File | Proves |
   |---|---|---|
-  | Unit | `Unit/Application/RetrievePaymentServiceTests.cs` | `Found` returns the recorded payment unchanged; `NotFound` for an unknown id; `PaymentRetrieved` / `PaymentNotFound` logged with `paymentId` (`FakeLogger`); uses `FakePaymentRepository` (UC1 fake, gains `GetById`) |
-  | Unit | `Unit/Infrastructure/InMemoryPaymentRepositoryTests.cs` | add then `GetById` returns the same payment; unknown id → `null` (the "add then retrieve" test deferred by UC1 R14) |
-  | Integration | `Integration/RetrievePaymentEndpointTests.cs` | `POST` (WireMock authorized / declined) then `GET` → body **equal** to the `POST` body (FR-003, SC-001); leading-zero last four; `[Theory]` over accepted forms (upper-case `D`, `N`, `B`, `P`, `X`, surrounding whitespace) → same payment, canonical id returned; repeated `GET` identical (FR-009); WireMock receives **no** request during `GET` (FR-010); unknown and all-zeros id → `404` `ProblemDetails` with `traceId` equal to the logged `TraceId`; `[Theory]` over invalid ids (`abc`, `123`, 35 and 37 characters, a `g`, misplaced hyphen, unbalanced brace, whitespace only, `4111111111111111`) → `400`, `errors.id`, no `paymentStatus`, `traceId`, `PaymentIdInvalid` logged; `GET /api/payments/` → `405` `ProblemDetails`; no PAN/CVV/raw invalid id in any response or log |
+  | Unit | `Unit/Application/RetrievePayment/RetrievePaymentServiceTests.cs` | `Found` returns the recorded payment unchanged; `NotFound` for an unknown id; `PaymentRetrieved` / `PaymentNotFound` logged with `paymentId` (`FakeLogger`); uses `FakePaymentRepository` (UC1 fake, gains `GetByIdAsync`) |
+  | Unit | `Unit/Infrastructure/Persistence/InMemoryPaymentRepositoryTests.cs` | add then `GetByIdAsync` returns the same payment; unknown id → `null` (the "add then retrieve" test deferred by UC1 R14) |
+  | Integration | `Integration/RetrievePaymentEndpointTests.cs` | `POST` (WireMock authorized / declined) then `GET` → body **equal** to the `POST` body (FR-003, SC-001); leading-zero last four; `[Theory]` over accepted forms (upper-case `D`, `N`, `B`, `P`) → same payment, canonical id returned; repeated `GET` identical (FR-009); WireMock receives **no** request during `GET` (FR-010); unknown and all-zeros id → `404` `ProblemDetails` with `traceId` equal to the logged `TraceId`; `[Theory]` over invalid ids (`abc`, `123`, 35 and 37 characters, a `g`, misplaced hyphen, unbalanced brace, a valid GUID with surrounding spaces or a leading tab, whitespace only, `4111111111111111`) → `400`, `errors.id`, no `paymentStatus`, `traceId`, `PaymentIdInvalid` logged; `GET /api/payments/` → `405` `ProblemDetails`; no PAN/CVV/raw invalid id in any response or log |
   | Integration | `Integration/ProcessPaymentEndpointTests.cs` (UC1) | unchanged – already asserts an unbindable `POST` body returns `paymentStatus: "Rejected"` while other actions' `400`s do not (UC1 R3); it must stay green after the retrieval case is added to the mapper |
   | E2E | `EndToEnd/RetrievePaymentJourneyTests.cs` | `[Trait("Category","E2E")]`: process then retrieve against the real simulator for an Authorized (card ending 7) and a Declined (card ending 8) payment; retrieved details equal the processing response |
 

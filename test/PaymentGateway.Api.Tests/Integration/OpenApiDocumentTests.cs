@@ -72,6 +72,23 @@ public class OpenApiDocumentTests : IClassFixture<WireMockBankFixture>
         Assert.Equal($"#/components/schemas/{expectedSchema}", content.GetProperty("schema").GetProperty("$ref").GetString());
     }
 
+    [Fact]
+    public async Task RetrievePayment_IdParameter_IsARequiredUuidInThePath()
+    {
+        // Arrange
+        JsonElement document = await GetDocumentAsync();
+
+        // Act
+        JsonElement parameter = Assert.Single(document.GetProperty("paths").GetProperty("/api/payments/{id}").GetProperty("get")
+            .GetProperty("parameters").EnumerateArray());
+
+        // Assert
+        Assert.Equal("id", parameter.GetProperty("name").GetString());
+        Assert.Equal("path", parameter.GetProperty("in").GetString());
+        Assert.True(parameter.GetProperty("required").GetBoolean());
+        Assert.Equal("uuid", parameter.GetProperty("schema").GetProperty("format").GetString());
+    }
+
     [Theory]
     [InlineData("PaymentRejectedProblemDetails", "paymentStatus")]
     [InlineData("PaymentRejectedProblemDetails", "errors")]
