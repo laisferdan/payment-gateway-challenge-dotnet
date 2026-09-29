@@ -115,6 +115,33 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
         Assert.Single(_bank.Server.LogEntries);
     }
 
+    [Theory]
+    [InlineData(301)]
+    [InlineData(302)]
+    [InlineData(303)]
+    [InlineData(307)]
+    [InlineData(308)]
+    public async Task RequestAuthorization_WhenBankRedirects_DoesNotFollowItAndReturnsOutcomeUnknown(int statusCode)
+    {
+        // Arrange: following a 307/308 would re-send the card number and CVV to wherever Location points.
+        _bank.Server
+            .Given(Request.Create().WithPath("/payments").UsingPost())
+            .RespondWith(Response.Create().WithStatusCode(statusCode).WithHeader("Location", $"{_bank.Url}/elsewhere"));
+        _bank.Server
+            .Given(Request.Create().WithPath("/elsewhere"))
+            .RespondWith(Response.Create().WithStatusCode(200).WithHeader("Content-Type", "application/json")
+                .WithBody("""{"authorized":true,"authorization_code":"abc"}"""));
+        using PaymentGatewayFactory factory = new(_bank.Url);
+        IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
+
+        // Act
+        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest, PaymentId);
+
+        // Assert
+        Assert.Equal(BankFailureKind.OutcomeUnknown, Assert.IsType<BankAuthorizationResult.Failed>(result).Kind);
+        Assert.Equal("/payments", Assert.Single(_bank.Server.LogEntries).RequestMessage!.Path);
+    }
+
     [Fact]
     public async Task RequestAuthorization_WhenA200HasAnUnknownCharset_ReturnsOutcomeUnknown()
     {

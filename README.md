@@ -4,8 +4,6 @@ An API that lets a merchant take card payments. It validates each request, sends
 **once** to the acquiring bank (a simulator here), records the bank's decision and returns a safe
 summary – never the full card number or CVV. Merchants can retrieve a payment later by its id.
 
-Built for the Checkout.com take-home assessment ([requirements](docs/requirements/assessment.md)).
-
 > **Five-minute reviewer path**
 > 1. [Quick start](#quick-start) and [API](#api) – what it does.
 > 2. [Design decisions](#design-decisions) – why it does it that way.
@@ -64,7 +62,6 @@ The [bank simulator](imposters/bank_simulator.ejs) decides by the **last digit**
 | `AcquiringBank__BaseUrl` | `http://localhost:8080` | Required; an absolute URL |
 | `AcquiringBank__TimeoutSeconds` | `10` | 1–60 |
 | `Swagger__Enabled` | `false` (`true` in Development and in compose) | |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | When set, traces and metrics are exported there over OTLP |
 
 Invalid settings stop the gateway at startup.
 
@@ -164,30 +161,80 @@ Quality gates, also enforced in CI: `dotnet build -c Release` (warnings are erro
 
 ## Architecture
 
-One project with hexagonal folders. Dependencies point inwards only, enforced by an architecture test.
+Hexagonal architecture (ports and adapters) in a single project: the hexagon is expressed as
+folders and namespaces. The core – `Domain/` and `Application/` – knows nothing about HTTP, JSON,
+ASP.NET Core or the bank's wire format. It declares the **ports** it needs, and **adapters** on
+either side plug into them.
 
 ```mermaid
 flowchart LR
-    Merchant -->|HTTP| Http
-    subgraph PaymentGateway.Api
-        Http["Http/<br/>PaymentsController, ProcessPaymentRequest, PaymentResultMapper"] --> Application
-        Application["Application/<br/>ProcessPaymentService, RetrievePaymentService, PaymentMetrics<br/>Ports: IAcquiringBank, IPaymentRepository"] --> Domain["Domain/<br/>PaymentRequest (validation rules), Payment"]
-        Infrastructure["Infrastructure/<br/>AcquiringBankClient, InMemoryPaymentRepository"] -. implements .-> Application
+    Merchant(["Merchant"])
+
+    subgraph Driving["Driving side"]
+        Http["<b>Http/Payments/</b><br/>driving adapter<br/><br/>PaymentsController<br/>ProcessPaymentRequest · PaymentResponseDto<br/>PaymentResultMapper"]
     end
-    Infrastructure -->|POST /payments| Bank[(Bank simulator)]
+
+    subgraph Core["Core – the hexagon"]
+        direction TB
+        UseCases["<b>Application/</b><br/>use cases<br/><br/>ProcessPaymentService<br/>RetrievePaymentService"]
+        Domain["<b>Domain/</b><br/>entities and rules<br/><br/>PaymentRequest (validation)<br/>Payment · CardDataMask"]
+        BankPort{{"<b>IAcquiringBank</b><br/>driven port"}}
+        RepoPort{{"<b>IPaymentRepository</b><br/>driven port"}}
+        UseCases --> Domain
+        UseCases --> BankPort
+        UseCases --> RepoPort
+    end
+
+    subgraph Driven["Driven side"]
+        BankClient["<b>Infrastructure/AcquiringBank/</b><br/>driven adapter<br/><br/>AcquiringBankClient<br/>BankPaymentRequest (snake_case)"]
+        Repo["<b>Infrastructure/Persistence/</b><br/>driven adapter<br/><br/>InMemoryPaymentRepository"]
+    end
+
+    Bank[("Acquiring bank<br/>simulator")]
+    Memory[("Process<br/>memory")]
+
+    Merchant -->|"HTTP · JSON"| Http
+    Http -->|"calls"| UseCases
+    BankPort ~~~ BankClient
+    RepoPort ~~~ Repo
+    BankClient -.->|"implements"| BankPort
+    Repo -.->|"implements"| RepoPort
+    BankClient -->|"POST /payments"| Bank
+    Repo --> Memory
 ```
 
-```
-src/PaymentGateway.Api/
-├── Domain/           validation rules, Payment, card masking – no framework dependencies
-├── Application/      use cases (process, retrieve), metrics, ports
-├── Http/             controller, wire contracts, result → HTTP mapping, request logging
-└── Infrastructure/   acquiring bank HTTP client, in-memory repository
-test/PaymentGateway.Api.Tests/
-├── Unit/             domain, use cases (with fakes), architecture rule
-├── Integration/      in-process API with WireMock as the bank
-└── EndToEnd/         against the real simulator
-```
+Solid arrows are calls; dashed arrows are "implements". Every source-code dependency points
+**into** the hexagon: the adapters know the core, the core never knows an adapter. `Program.cs` is
+the only composition root – it is the one place that binds each port to its adapter
+(`IAcquiringBank` → `AcquiringBankClient`, `IPaymentRepository` → `InMemoryPaymentRepository`).
+
+### The dependency rule, enforced
+
+[`LayerDependencyTests`](test/PaymentGateway.Api.Tests/Unit/Architecture/LayerDependencyTests.cs)
+reads every type's signatures and IL and fails the test run (and CI) if a layer reaches outwards or sideways:
+
+| Layer | Hexagon role | Depends on | Never depends on (tested) |
+|---|---|---|---|
+| `Domain/` | Core: entities, validation rules, card masking | nothing (BCL only) | `Application`, `Http`, `Infrastructure`, any `Microsoft.*` |
+| `Application/` | Core: one service per use case, driven ports, results, metrics | `Domain` | `Http`, `Infrastructure`, `Microsoft.AspNetCore` |
+| `Http/` | Driving adapter: controller, wire DTOs, result → HTTP mapping | `Application`, `Domain` | `Infrastructure` |
+| `Infrastructure/` | Driven adapters: bank HTTP client, in-memory store | `Application` (ports), `Domain` | `Http` |
+
+What this buys:
+
+- **Swappable edges.** A real bank or a database is a new adapter behind the same port; the use
+  cases, the domain and their tests do not change.
+- **A core tested without I/O.** The use cases run in unit tests against `FakeAcquiringBank` and
+  `FakePaymentRepository`; the adapters are tested separately (WireMock for the bank client, the
+  real simulator end to end).
+- **Each wire format stays in its adapter.** The merchant's JSON contract lives only in `Http/`
+  (`ProcessPaymentRequest`, `PaymentResponseDto`); the bank's snake_case contract lives only in
+  `Infrastructure/` (`BankPaymentRequest`, `BankPaymentResponse`). The core speaks its own types
+  (`PaymentRequest`, `Payment`, `BankAuthorizationResult`), so a rename on either wire cannot leak
+  into the other.
+- **Interfaces only where the core needs the outside world.** The two driven ports are named after
+  the capability, not the technology. Use cases are concrete classes: the driving adapter calls
+  them directly, since nothing else would implement them.
 
 ## Design decisions
 
@@ -197,6 +244,8 @@ test/PaymentGateway.Api.Tests/
 - **Only `503`, `408` and `429` invite a retry**, because only then did the bank certainly not process
   the payment: it was unavailable, timed out waiting for the request, or was rate-limiting.
   A timeout or a connection lost after sending is a `504`: the outcome is unknown.
+- **Redirects are never followed.** Following a `307`/`308` would re-send the card number and CVV to
+  whatever host the `Location` header names; any `3xx` is an unknown outcome (`504`).
 - **A `200` the gateway cannot read is an unknown outcome**, not a bank error – the bank processed
   it. It is logged at `Error` (the other bank failures log at `Warning`), because it is the one case
   where the shopper may have been charged with nothing to show for it locally.
@@ -276,8 +325,7 @@ test/PaymentGateway.Api.Tests/
   - It is called once per request, from `ProcessPaymentService` (every outcome that reaches the use
     case) or `InvalidModelStateResponder` (a model-binding failure that never does).
     `PaymentResultMapper` stays a pure mapper with no metrics side effect.
-- **The OTLP exporter is opt-in** via `OTEL_EXPORTER_OTLP_ENDPOINT`, so a deployment without a
-  collector doesn't fail every export cycle trying to reach `http://localhost:4317`. Locally, use:
+- **Seeing the metrics locally:**
 
   ```bash
   dotnet-counters monitor -n PaymentGateway.Api --counters PaymentGateway,Microsoft.AspNetCore.Hosting,System.Net.Http
@@ -287,6 +335,9 @@ test/PaymentGateway.Api.Tests/
 
 - **In-memory storage**, as the assessment allows: payments are lost on restart.
 - **No authentication**: any caller holding a payment id can retrieve it.
+- **Nothing is exported to an observability backend.** Logs go to the console; metrics are read with
+  `dotnet-counters`. OpenTelemetry is used only to give every request a trace id. Exporting traces
+  and metrics to a collector (OTLP) is a production next step.
 - **TLS is terminated upstream.** The gateway serves HTTP and never redirects to HTTPS – redirecting
   after a card number was already sent in clear protects nothing.
 - **Ubuntu Chiseled runtime image** (`aspnet:8.0-noble-chiseled`), running as non-root: no shell, no

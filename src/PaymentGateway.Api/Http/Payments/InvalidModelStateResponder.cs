@@ -25,14 +25,16 @@ public sealed partial class InvalidModelStateResponder
 
     public IActionResult Respond(ActionContext context)
     {
-        List<string> invalidPaths = context.ModelState
+        // Only allow-listed names are logged: a ModelState key is a JSON path, and a JSON property
+        // name is caller-controlled text that could hold a card number.
+        List<(string Field, string Message)> errors = context.ModelState
             .Where(entry => entry.Value is { Errors.Count: > 0 })
-            .Select(entry => entry.Key)
-            .Distinct()
+            .Select(entry => ToFieldError(entry.Key))
+            .DistinctBy(error => error.Field)
             .ToList();
-        LogPaymentRequestUnreadable(_logger, string.Join(",", invalidPaths));
+        LogPaymentRequestUnreadable(_logger, string.Join(",", errors.Select(error => error.Field)));
         _metrics.RecordOutcome(new ProcessPaymentResult.Rejected([]));
-        return _mapper.PaymentRejected(invalidPaths.Select(ToFieldError).DistinctBy(error => error.Field), context.HttpContext);
+        return _mapper.PaymentRejected(errors, context.HttpContext);
     }
 
     private static (string Field, string Message) ToFieldError(string modelStateKey)
