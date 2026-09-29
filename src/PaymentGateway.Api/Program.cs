@@ -68,7 +68,9 @@ builder.Services.AddHttpClient<IAcquiringBank, AcquiringBankClient>((services, c
     AcquiringBankOptions options = services.GetRequiredService<IOptions<AcquiringBankOptions>>().Value;
     client.BaseAddress = new Uri(options.BaseUrl);
     client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-});
+})
+// A followed 307/308 would re-send the card number and CVV to wherever Location points.
+.ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false });
 
 builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
 {
