@@ -244,6 +244,8 @@ What this buys:
 - **Only `503`, `408` and `429` invite a retry**, because only then did the bank certainly not process
   the payment: it was unavailable, timed out waiting for the request, or was rate-limiting.
   A timeout or a connection lost after sending is a `504`: the outcome is unknown.
+- **Redirects are never followed.** Following a `307`/`308` would re-send the card number and CVV to
+  whatever host the `Location` header names; any `3xx` is an unknown outcome (`504`).
 - **A `200` the gateway cannot read is an unknown outcome**, not a bank error – the bank processed
   it. It is logged at `Error` (the other bank failures log at `Warning`), because it is the one case
   where the shopper may have been charged with nothing to show for it locally.

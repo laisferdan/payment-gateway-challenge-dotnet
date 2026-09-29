@@ -57,6 +57,28 @@ public class CardDataLoggingTests : IClassFixture<WireMockBankFixture>
         Assert.DoesNotContain(factory.LogCollector.GetSnapshot(), record => LogText.Of(record).Contains(CardNumber) || LogText.Of(record).Contains(Cvv));
     }
 
+    [Theory]
+    [InlineData($$"""{"{{CardNumber}}":}""")]
+    [InlineData($$"""{"{{CardNumber}}":{{Cvv}}""")]
+    [InlineData($$$"""{"cardNumber":{"{{{CardNumber}}}":"ten"}}""")]
+    [InlineData($$"""{"amount":1050,"{{CardNumber}}"}""")]
+    public async Task UnreadableBody_WhenCardDataIsAPropertyName_IsNotLoggedOrReturned(string json)
+    {
+        // Arrange: a JSON property name is caller-controlled text, and so is any JSON path built from it.
+        using PaymentGatewayFactory factory = new(_bank.Url);
+        using HttpClient client = factory.CreateClient();
+
+        // Act
+        HttpResponseMessage response = await client.PostAsync("/api/payments", new StringContent(json, Encoding.UTF8, "application/json"));
+
+        // Assert
+        string text = await response.Content.ReadAsStringAsync();
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.DoesNotContain(CardNumber, text);
+        Assert.NotEmpty(factory.LogCollector.GetSnapshot());
+        Assert.DoesNotContain(factory.LogCollector.GetSnapshot(), record => LogText.Of(record).Contains(CardNumber) || LogText.Of(record).Contains(Cvv));
+    }
+
     [Fact]
     public async Task Get_ForAProcessedPayment_LogsNoPanOrCvv()
     {

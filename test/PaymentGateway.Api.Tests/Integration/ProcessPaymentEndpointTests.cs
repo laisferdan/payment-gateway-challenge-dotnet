@@ -216,9 +216,9 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
     }
 
     [Theory]
-    [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":"ten","cvv":"123"}""")]
-    [InlineData("{")]
-    public async Task Post_WhenBodyIsUnreadable_LogsPaymentRequestUnreadableOnce(string json)
+    [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":"ten","cvv":"123"}""", "amount")]
+    [InlineData("{", "body")]
+    public async Task Post_WhenBodyIsUnreadable_LogsPaymentRequestUnreadableOnce(string json, string expectedInvalidFields)
     {
         // Arrange
         using PaymentGatewayFactory factory = new(_bank.Url);
@@ -232,7 +232,7 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
         FakeLogRecord record = Assert.Single(factory.LogCollector.GetSnapshot(), r => r.Id.Name == "PaymentRequestUnreadable");
         Assert.Equal(1003, record.Id.Id);
         Assert.Equal(LogLevel.Information, record.Level);
-        Assert.NotNull(record.GetStructuredStateValue("invalidFields"));
+        Assert.Equal(expectedInvalidFields, record.GetStructuredStateValue("invalidFields"));
         Assert.DoesNotContain("ten", LogText.Of(record));
         Assert.Equal(traceId, LogText.TraceId(record));
     }
