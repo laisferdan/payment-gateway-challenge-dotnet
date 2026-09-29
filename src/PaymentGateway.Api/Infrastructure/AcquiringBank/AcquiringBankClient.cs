@@ -10,7 +10,6 @@ using PaymentGateway.Api.Domain.PaymentRequests;
 
 namespace PaymentGateway.Api.Infrastructure.AcquiringBank;
 
-// One call per payment, never retried: a retry could charge the shopper twice.
 public sealed partial class AcquiringBankClient : IAcquiringBank
 {
     private const string PaymentsPath = "payments";
@@ -27,57 +26,28 @@ public sealed partial class AcquiringBankClient : IAcquiringBank
     public async Task<BankAuthorizationResult> RequestAuthorizationAsync(PaymentRequest request, Guid paymentId)
     {
         long started = Stopwatch.GetTimestamp();
+        (BankAuthorizationResult result, int? httpStatusCode) = await PostPaymentAsync(request);
+        LogOutcome(request, paymentId, result, httpStatusCode, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        return result;
+    }
+
+    private async Task<(BankAuthorizationResult Result, int? HttpStatusCode)> PostPaymentAsync(PaymentRequest request)
+    {
         try
         {
-            using HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
-                PaymentsPath, BankPaymentRequest.From(request));
-            BankAuthorizationResult result = await ClassifyAsync(response);
-            if (result is BankAuthorizationResult.Failed failed)
-            {
-                LogFailed(request, paymentId, failed.Kind, (int)response.StatusCode, started);
-            }
-            else
-            {
-                LogBankCallCompleted(_logger, paymentId, result is BankAuthorizationResult.Authorized ? "Authorized" : "Declined", ElapsedMs(started));
-            }
-
-            return result;
+            using HttpResponseMessage response = await _httpClient.PostAsJsonAsync(PaymentsPath, BankPaymentRequest.From(request));
+            return (await ClassifyResponseAsync(response), (int)response.StatusCode);
         }
         catch (HttpRequestException exception) when (NeverReachedTheBank(exception))
         {
-            return Failed(request, paymentId, BankFailureKind.Unavailable, started);
+            return (new BankAuthorizationResult.Failed(BankFailureKind.Unavailable), null);
         }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
         {
-            // Timed out or lost after the request was sent: the bank may have authorized it.
-            return Failed(request, paymentId, BankFailureKind.OutcomeUnknown, started);
+            return (new BankAuthorizationResult.Failed(BankFailureKind.OutcomeUnknown), null);
         }
     }
 
-    private static long ElapsedMs(long started)
-    {
-        return (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-    }
-
-    private BankAuthorizationResult.Failed Failed(PaymentRequest request, Guid paymentId, BankFailureKind kind, long started)
-    {
-        LogFailed(request, paymentId, kind, httpStatusCode: null, started);
-        return new BankAuthorizationResult.Failed(kind);
-    }
-
-    private void LogFailed(PaymentRequest request, Guid paymentId, BankFailureKind kind, int? httpStatusCode, long started)
-    {
-        LogBankCallFailed(
-            _logger, LevelFor(kind), paymentId, request.CardNumberLastFour, kind, httpStatusCode, ElapsedMs(started),
-            request.Currency, request.Amount);
-    }
-
-    private static LogLevel LevelFor(BankFailureKind kind)
-    {
-        return kind == BankFailureKind.OutcomeUnknown ? LogLevel.Error : LogLevel.Warning;
-    }
-
-    // The connection was never established, so no payment request was sent.
     private static bool NeverReachedTheBank(HttpRequestException exception)
     {
         return exception.HttpRequestError is HttpRequestError.ConnectionError
@@ -85,45 +55,37 @@ public sealed partial class AcquiringBankClient : IAcquiringBank
             or HttpRequestError.SecureConnectionError;
     }
 
-    private static async Task<BankAuthorizationResult> ClassifyAsync(HttpResponseMessage response)
+    private static async Task<BankAuthorizationResult> ClassifyResponseAsync(HttpResponseMessage response)
     {
-        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+        return response.StatusCode switch
         {
-            return new BankAuthorizationResult.Failed(BankFailureKind.Unavailable);
-        }
+            HttpStatusCode.OK => ClassifyBody(await ReadBodyOrNullAsync(response)),
+            HttpStatusCode.ServiceUnavailable or HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+                => new BankAuthorizationResult.Failed(BankFailureKind.Unavailable),
+            >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError => new BankAuthorizationResult.Failed(BankFailureKind.Error),
+            _ => new BankAuthorizationResult.Failed(BankFailureKind.OutcomeUnknown),
+        };
+    }
 
-        // Any other 5xx (the bank's own 500s, or a proxy's 502/504 in front of it) can happen after an
-        // authorization was already committed, so – like an unreadable 200 – the outcome is unknown,
-        // not an error: only a 4xx means the bank itself refused the request outright.
-        if ((int)response.StatusCode >= 500)
+    private static async Task<BankPaymentResponse?> ReadBodyOrNullAsync(HttpResponseMessage response)
+    {
+        try
         {
-            return new BankAuthorizationResult.Failed(BankFailureKind.OutcomeUnknown);
+            return await response.Content.ReadFromJsonAsync<BankPaymentResponse>();
         }
-
-        if (response.StatusCode != HttpStatusCode.OK)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {
-            return new BankAuthorizationResult.Failed(BankFailureKind.Error);
+            return null;
         }
+    }
 
-        // An unreadable 200 may hide an authorization: the outcome is unknown, not an error.
-        BankPaymentResponse? body = await ReadBodyAsync(response);
+    private static BankAuthorizationResult ClassifyBody(BankPaymentResponse? body)
+    {
         return body switch
         {
             { Authorized: true, AuthorizationCode: { Length: > 0 } code } => new BankAuthorizationResult.Authorized(code),
             { Authorized: false } => new BankAuthorizationResult.Declined(),
             _ => new BankAuthorizationResult.Failed(BankFailureKind.OutcomeUnknown),
         };
-    }
-
-    private static async Task<BankPaymentResponse?> ReadBodyAsync(HttpResponseMessage response)
-    {
-        try
-        {
-            return await response.Content.ReadFromJsonAsync<BankPaymentResponse>();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 }

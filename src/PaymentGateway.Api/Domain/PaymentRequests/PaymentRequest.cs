@@ -2,7 +2,6 @@ using PaymentGateway.Api.Domain.CardData;
 
 namespace PaymentGateway.Api.Domain.PaymentRequests;
 
-// Carries the full card number and CVV, so it only lives while the request is handled; never stored.
 public sealed class PaymentRequest
 {
     public const int MinCardNumberLength = 14;
@@ -44,7 +43,6 @@ public sealed class PaymentRequest
         return $"PaymentRequest {{ CardNumber = {CardDataMask.MaskCardNumber(CardNumber)}, Expiry = {ExpiryMonth:00}/{ExpiryYear}, Currency = {Currency}, Amount = {Amount} }}";
     }
 
-    // Reports every broken rule at once; values are never trimmed, padded or case-converted into validity.
     public static CreatePaymentRequestResult Create(
         string? cardNumber,
         int? expiryMonth,
@@ -73,8 +71,6 @@ public sealed class PaymentRequest
         }
         else if (monthValid && expiryMonth is int month && IsBeforeCurrentMonth(month, year, today))
         {
-            // Only when both are structurally valid, so one bad field does not add a misleading second
-            // error. The combination, not either field alone, is at fault, so both are keyed.
             errors.Add(new ValidationError(nameof(ExpiryMonth), Messages.Expired));
             errors.Add(new ValidationError(nameof(ExpiryYear), Messages.Expired));
         }
@@ -103,7 +99,6 @@ public sealed class PaymentRequest
             new PaymentRequest(cardNumber!, expiryMonth!.Value, expiryYear!.Value, currency!, amount!.Value, cvv!));
     }
 
-    // A card is valid until the end of its expiry month.
     private static bool IsBeforeCurrentMonth(int expiryMonth, int expiryYear, DateOnly today)
     {
         return (expiryYear, expiryMonth).CompareTo((today.Year, today.Month)) < 0;
@@ -118,7 +113,6 @@ public sealed class PaymentRequest
             && value.All(char.IsAsciiDigit);
     }
 
-    // Each message also answers a value of the wrong JSON type, and never echoes the submitted value.
     public static class Messages
     {
         public static readonly string CardNumber =
@@ -141,7 +135,7 @@ public sealed class PaymentRequest
         public static readonly string Cvv =
             $"CVV must be a string of {MinCvvLength} or {MaxCvvLength} digits (0-9).";
 
-        private static readonly IReadOnlyDictionary<string, string> ByField = new Dictionary<string, string>
+        public static readonly IReadOnlyDictionary<string, string> ByField = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
             [nameof(PaymentRequest.CardNumber)] = CardNumber,
             [nameof(PaymentRequest.ExpiryMonth)] = ExpiryMonth,
@@ -150,10 +144,5 @@ public sealed class PaymentRequest
             [nameof(PaymentRequest.Amount)] = Amount,
             [nameof(PaymentRequest.Cvv)] = Cvv,
         };
-
-        public static bool TryFor(string field, out string message)
-        {
-            return ByField.TryGetValue(field, out message!);
-        }
     }
 }

@@ -6,9 +6,6 @@ using PaymentGateway.Api.Domain.PaymentRequests;
 
 namespace PaymentGateway.Api.Http.Payments;
 
-// A payment body the framework could not bind is Rejected like any other invalid payment. This is
-// wired as the global InvalidModelStateResponseFactory, but POST /api/payments is the only action
-// in this API that binds a body, so it is the only one this can ever be invoked for.
 public sealed partial class InvalidModelStateResponder
 {
     private const string BodyField = "body";
@@ -38,23 +35,17 @@ public sealed partial class InvalidModelStateResponder
         return _mapper.PaymentRejected(invalidPaths.Select(ToFieldError).DistinctBy(error => error.Field), context.HttpContext);
     }
 
-    // "$.amount" → the amount rule; "$" or "" (malformed JSON, empty body) → the whole body.
     private static (string Field, string Message) ToFieldError(string modelStateKey)
     {
         if (modelStateKey.StartsWith(JsonPathPrefix, StringComparison.Ordinal))
         {
             string jsonName = modelStateKey[JsonPathPrefix.Length..];
-            if (PaymentRequest.Messages.TryFor(ToPascalCase(jsonName), out string message))
+            if (PaymentRequest.Messages.ByField.TryGetValue(jsonName, out string? message))
             {
                 return (jsonName, message);
             }
         }
 
         return (BodyField, UnreadableBodyMessage);
-    }
-
-    private static string ToPascalCase(string camelCase)
-    {
-        return camelCase.Length == 0 ? camelCase : char.ToUpperInvariant(camelCase[0]) + camelCase[1..];
     }
 }

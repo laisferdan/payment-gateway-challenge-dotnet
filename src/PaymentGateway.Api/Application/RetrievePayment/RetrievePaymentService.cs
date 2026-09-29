@@ -14,9 +14,9 @@ public sealed partial class RetrievePaymentService
         _logger = logger;
     }
 
-    public async Task<Payment?> RetrieveAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<Payment?> RetrieveAsync(Guid id)
     {
-        Payment? payment = await _paymentRepository.GetByIdAsync(id, cancellationToken);
+        Payment? payment = await _paymentRepository.GetByIdAsync(id);
         if (payment is null)
         {
             LogPaymentNotFound(_logger, id);

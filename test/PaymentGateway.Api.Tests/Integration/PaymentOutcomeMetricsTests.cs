@@ -10,9 +10,6 @@ using WireMock.ResponseBuilders;
 
 namespace PaymentGateway.Api.Tests.Integration;
 
-// The outcomes counter is recorded once per request: by ProcessPaymentService for everything that
-// reaches the use case, and by InvalidModelStateResponder for a framework model-binding failure
-// that never reaches it.
 public class PaymentOutcomeMetricsTests : IClassFixture<WireMockBankFixture>
 {
     private readonly WireMockBankFixture _bank;

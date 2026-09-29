@@ -18,7 +18,6 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
     private const string AuthorizedBody = """{"authorized":true,"authorization_code":"0bb07405-6d44-4b50-a14f-7ae0beff13ad"}""";
     private const string DeclinedBody = """{"authorized":false,"authorization_code":""}""";
 
-    // A 200 body has no traceId: the merchant correlates a found payment through its own traceparent.
     private const string MerchantTraceId = "4bf92f3577b34da6a3ce929d0e0e4736";
 
     private readonly WireMockBankFixture _bank;
@@ -129,13 +128,13 @@ public class RetrievePaymentEndpointTests : IClassFixture<WireMockBankFixture>
     [Theory]
     [InlineData("abc")]
     [InlineData("123")]
-    [InlineData("9c858901-8a57-4791-81fe-4c455b099b")] // 35 chars
-    [InlineData("9c858901-8a57-4791-81fe-4c455b099bc912")] // 37 chars
-    [InlineData("9c858901-8a57-4791-81fe-4c455b099bg9")] // non-hex 'g'
-    [InlineData("9c8589018a57-4791-81fe-4c455b099bc9")] // misplaced hyphen
-    [InlineData("{9c858901-8a57-4791-81fe-4c455b099bc9")] // mismatched bracket
-    [InlineData("   ")] // whitespace only
-    [InlineData("4111111111111111")] // card-like
+    [InlineData("9c858901-8a57-4791-81fe-4c455b099b")]
+    [InlineData("9c858901-8a57-4791-81fe-4c455b099bc912")]
+    [InlineData("9c858901-8a57-4791-81fe-4c455b099bg9")]
+    [InlineData("9c8589018a57-4791-81fe-4c455b099bc9")]
+    [InlineData("{9c858901-8a57-4791-81fe-4c455b099bc9")]
+    [InlineData("   ")]
+    [InlineData("4111111111111111")]
     public async Task Get_WhenIdIsNotAGuid_Returns404WithoutEchoingIt(string invalidId)
     {
         // Arrange

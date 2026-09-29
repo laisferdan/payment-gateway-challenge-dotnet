@@ -2,7 +2,6 @@ using PaymentGateway.Api.Domain.PaymentRequests;
 
 namespace PaymentGateway.Api.Domain.Payments;
 
-// Holds only data that is safe to store: never the full card number or the CVV.
 public sealed class Payment
 {
     private Payment(
@@ -29,7 +28,6 @@ public sealed class Payment
 
     public PaymentStatus Status { get; }
 
-    // Kept for reconciliation and disputes, but not returned: the assessment's response omits it.
     public string? AuthorizationCode { get; }
 
     public string CardNumberLastFour { get; }

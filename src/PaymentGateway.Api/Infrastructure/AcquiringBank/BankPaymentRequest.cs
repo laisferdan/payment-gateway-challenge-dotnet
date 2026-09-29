@@ -10,7 +10,6 @@ internal sealed class BankPaymentRequest
     [JsonPropertyName("card_number")]
     public required string CardNumber { get; init; }
 
-    /// <summary>Expiry as <c>MM/yyyy</c>.</summary>
     [JsonPropertyName("expiry_date")]
     public required string ExpiryDate { get; init; }
 

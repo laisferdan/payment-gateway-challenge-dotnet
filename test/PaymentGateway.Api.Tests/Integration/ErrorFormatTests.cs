@@ -39,7 +39,7 @@ public class ErrorFormatTests : IClassFixture<WireMockBankFixture>
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         JsonElement body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
         Assert.Equal(404, body.GetProperty("status").GetInt32());
-        Assert.False(string.IsNullOrEmpty(body.GetProperty("type").GetString()));
+        Assert.False(body.TryGetProperty("type", out _));
         Assert.False(string.IsNullOrEmpty(body.GetProperty("title").GetString()));
         Assert.Matches("^[0-9a-f]{32}$", body.GetProperty("traceId").GetString());
         Assert.Equal(body.GetProperty("traceId").GetString(), Assert.Single(response.Headers.GetValues("X-Trace-Id")));
@@ -108,7 +108,7 @@ public class ErrorFormatTests : IClassFixture<WireMockBankFixture>
             throw new InvalidOperationException(Secret);
         }
 
-        public Task<Payment?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+        public Task<Payment?> GetByIdAsync(Guid id)
         {
             throw new InvalidOperationException(Secret);
         }

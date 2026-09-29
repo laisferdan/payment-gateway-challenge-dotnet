@@ -107,7 +107,7 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         string text = await response.Content.ReadAsStringAsync();
         JsonElement body = JsonDocument.Parse(text).RootElement;
-        Assert.Equal("https://tools.ietf.org/html/rfc9110#section-15.5.1", body.GetProperty("type").GetString());
+        Assert.False(body.TryGetProperty("type", out _));
         Assert.Equal("Payment rejected", body.GetProperty("title").GetString());
         Assert.Equal("Rejected", body.GetProperty("paymentStatus").GetString());
         Assert.Equal(
@@ -126,6 +126,7 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
     [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":12,"expiryYear":2030,"currency":"GBP","amount":"1050","cvv":"123"}""", "amount", nameof(PaymentRequest.Amount))]
     [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":"12","expiryYear":2030,"currency":"GBP","amount":1050,"cvv":"123"}""", "expiryMonth", nameof(PaymentRequest.ExpiryMonth))]
     [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":12,"expiryYear":"2030","currency":"GBP","amount":1050,"cvv":"123"}""", "expiryYear", nameof(PaymentRequest.ExpiryYear))]
+    [InlineData("""{"cardNumber":"2222405343248877","expiryMonth":12,"expiryYear":2030,"currency":"GBP","AMOUNT":"ten","cvv":"123"}""", "AMOUNT", nameof(PaymentRequest.Amount))]
     [InlineData("{", "body", null)]
     [InlineData("", "body", null)]
     public async Task Post_WhenBodyIsUnreadable_ReturnsRejectedWithTheFieldRule(string json, string expectedField, string? field)
@@ -145,7 +146,7 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
         Assert.Equal("Payment rejected", body.GetProperty("title").GetString());
         JsonProperty error = Assert.Single(body.GetProperty("errors").EnumerateObject());
         Assert.Equal(expectedField, error.Name);
-        string expectedMessage = field is not null && PaymentRequest.Messages.TryFor(field, out string message)
+        string expectedMessage = field is not null && PaymentRequest.Messages.ByField.TryGetValue(field, out string? message)
             ? message
             : "The request body must be a JSON object with the payment fields.";
         Assert.Equal(expectedMessage, Assert.Single(error.Value.EnumerateArray()).GetString());
@@ -249,8 +250,6 @@ public class ProcessPaymentEndpointTests : IClassFixture<WireMockBankFixture>
         Assert.False(body.TryGetProperty("paymentStatus", out _));
         Assert.Matches("^[0-9a-f]{32}$", body.GetProperty("traceId").GetString());
 
-        // Only a 504's outcome is genuinely unknown; a 502/503 means the payment was certainly not
-        // made, so it carries no id that would look retrievable (and 404 on GET).
         if (expectedStatus == HttpStatusCode.GatewayTimeout)
         {
             Assert.True(Guid.TryParse(body.GetProperty("attemptId").GetString(), out _));

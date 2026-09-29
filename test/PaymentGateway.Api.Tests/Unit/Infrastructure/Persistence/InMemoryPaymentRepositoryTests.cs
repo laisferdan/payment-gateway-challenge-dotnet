@@ -18,7 +18,7 @@ public class InMemoryPaymentRepositoryTests
         await repository.AddAsync(payment);
 
         // Act
-        Payment? found = await repository.GetByIdAsync(payment.Id, CancellationToken.None);
+        Payment? found = await repository.GetByIdAsync(payment.Id);
 
         // Assert
         Assert.Same(payment, found);
@@ -35,7 +35,7 @@ public class InMemoryPaymentRepositoryTests
         // Act
         Task Duplicate() => repository.AddAsync(Payment.Declined(id, Request));
 
-        // Assert – AddAsync throws synchronously, so the call is deferred into ThrowsAsync.
+        // Assert
         await Assert.ThrowsAsync<InvalidOperationException>(Duplicate);
     }
 
@@ -46,24 +46,9 @@ public class InMemoryPaymentRepositoryTests
         InMemoryPaymentRepository repository = new();
 
         // Act
-        Payment? found = await repository.GetByIdAsync(Guid.NewGuid(), CancellationToken.None);
+        Payment? found = await repository.GetByIdAsync(Guid.NewGuid());
 
         // Assert
         Assert.Null(found);
-    }
-
-    [Fact]
-    public async Task GetById_WhenCancelled_IsCancelled()
-    {
-        // Arrange
-        InMemoryPaymentRepository repository = new();
-        Payment payment = Payment.Authorized(Guid.NewGuid(), Request, "auth-code");
-        await repository.AddAsync(payment);
-
-        // Act
-        Task<Payment?> lookup = repository.GetByIdAsync(payment.Id, new CancellationToken(canceled: true));
-
-        // Assert
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => lookup);
     }
 }

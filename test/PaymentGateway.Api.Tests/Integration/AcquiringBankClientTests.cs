@@ -86,7 +86,14 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
 
     [Theory]
     [InlineData(503, """{"errorMessage":"unavailable"}""", BankFailureKind.Unavailable)]
+    [InlineData(408, "", BankFailureKind.Unavailable)]
+    [InlineData(429, "", BankFailureKind.Unavailable)]
     [InlineData(400, """{"errorMessage":"missing field"}""", BankFailureKind.Error)]
+    [InlineData(404, "", BankFailureKind.Error)]
+    [InlineData(422, "", BankFailureKind.Error)]
+    [InlineData(201, "", BankFailureKind.OutcomeUnknown)]
+    [InlineData(202, "", BankFailureKind.OutcomeUnknown)]
+    [InlineData(302, "", BankFailureKind.OutcomeUnknown)]
     [InlineData(500, "", BankFailureKind.OutcomeUnknown)]
     [InlineData(502, "", BankFailureKind.OutcomeUnknown)]
     [InlineData(504, "", BankFailureKind.OutcomeUnknown)]
@@ -109,6 +116,26 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
     }
 
     [Fact]
+    public async Task RequestAuthorization_WhenA200HasAnUnknownCharset_ReturnsOutcomeUnknown()
+    {
+        // Arrange
+        _bank.Server
+            .Given(Request.Create().WithPath("/payments").UsingPost())
+            .RespondWith(Response.Create()
+                .WithStatusCode(200)
+                .WithHeader("Content-Type", "application/json; charset=unknown")
+                .WithBody("""{"authorized":true,"authorization_code":"abc"}"""));
+        using PaymentGatewayFactory factory = new(_bank.Url);
+        IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
+
+        // Act
+        BankAuthorizationResult result = await client.RequestAuthorizationAsync(ValidRequest, PaymentId);
+
+        // Assert
+        Assert.Equal(BankFailureKind.OutcomeUnknown, Assert.IsType<BankAuthorizationResult.Failed>(result).Kind);
+    }
+
+    [Fact]
     public async Task RequestAuthorization_WhenBankDoesNotAnswerInTime_ReturnsOutcomeUnknown()
     {
         // Arrange
@@ -127,7 +154,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
     [Fact]
     public async Task RequestAuthorization_WhenConnectionDropsAfterTheRequestWasSent_ReturnsOutcomeUnknown()
     {
-        // Arrange – WireMock always answers, so a raw socket plays a bank that reads the request and hangs up.
+        // Arrange
         using TcpListener bank = new(IPAddress.Loopback, 0);
         bank.Start();
         Task hangUp = HangUpAfterReadingAsync(bank);
@@ -177,7 +204,7 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
         // Act
         await client.RequestAuthorizationAsync(ValidRequest, PaymentId);
 
-        // Assert – one entry per bank failure, with the payment id: no join with another log is needed.
+        // Assert
         FakeLogRecord entry = Assert.Single(factory.LogCollector.GetSnapshot(), record => record.Category == typeof(AcquiringBankClient).FullName);
         Assert.Equal("BankCallFailed", entry.Id.Name);
         Assert.Equal(expectedLevel, entry.Level);

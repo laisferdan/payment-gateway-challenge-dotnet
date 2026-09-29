@@ -6,96 +6,141 @@ summary – never the full card number or CVV. Merchants can retrieve a payment 
 
 Built for the Checkout.com take-home assessment ([requirements](docs/requirements/assessment.md)).
 
-**Five-minute reviewer path:** this README is the current source of truth. Read [API](#api) and
-[Design decisions](#design-decisions) below, then [`ProcessPaymentService.cs`](src/PaymentGateway.Api/Application/ProcessPayment/ProcessPaymentService.cs)
-and [`PaymentRequest.cs`](src/PaymentGateway.Api/Domain/PaymentRequests/PaymentRequest.cs) for the
-core logic. `specs/` and `.specify/` are process artifacts from building this test-first with Spec
-Kit (see [How this was built](#how-this-was-built)) – not required reading.
+> **Five-minute reviewer path**
+> 1. [Quick start](#quick-start) and [API](#api) – what it does.
+> 2. [Design decisions](#design-decisions) – why it does it that way.
+> 3. The core logic: [`ProcessPaymentService.cs`](src/PaymentGateway.Api/Application/ProcessPayment/ProcessPaymentService.cs)
+>    and [`PaymentRequest.cs`](src/PaymentGateway.Api/Domain/PaymentRequests/PaymentRequest.cs).
+>
+> This README and the code are the source of truth. `specs/` holds process artifacts
+> (see [How this was built](#how-this-was-built)) – not required reading.
 
-## API
+## Contents
 
-`POST /api/payments` ends in exactly one outcome:
+- [Quick start](#quick-start)
+- [API](#api)
+- [Tests](#tests)
+- [Architecture](#architecture)
+- [Design decisions](#design-decisions)
+- [How this was built](#how-this-was-built)
 
-| Outcome | HTTP | Meaning |
-|---|---|---|
-| **Authorized** / **Declined** | `201` | the bank decided; the payment is recorded and retrievable at the `Location` header |
-| **Rejected** | `400` | invalid information; the bank was **not** called, nothing recorded |
-| Bank unavailable | `503` | the bank answered `503` or could not be reached – the payment was not made; retrying is safe |
-| Bank error | `502` | the bank answered with a `4xx`, refusing the request outright; retrying will not help |
-| Outcome unknown | `504` | the request may have reached the bank but no usable response came back – a timeout, a lost connection, an unreadable `200`, or **any `5xx` other than `503`** (the bank's own or a proxy's in front of it, which can happen after an authorization was already committed); the payment may have been authorized, so do not retry – quote the `attemptId` to support |
+## Quick start
 
-Bank failures are errors, not payment statuses: nothing is recorded and they are never reported as Declined.
-Why `504` cannot be avoided without the bank's help, and how production closes it, is under
-[Unknown outcomes and double charges](#unknown-outcomes-and-double-charges).
-
-There is no merchant-facing idempotency key: a merchant retry is a new payment. Why that is a
-deliberate scope decision, and not an oversight, is under
-[Unknown outcomes and double charges](#unknown-outcomes-and-double-charges).
-
-`GET /api/payments/{id}` returns the payment with exactly the fields of the processing response, or
-`404` when no payment has that id. An id that is not a GUID never reaches the use case either: it gets
-the framework's own `404` for an unmatched route. It never contacts the bank.
+Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) and Docker.
 
 ```bash
-curl -i -X POST https://localhost:7092/api/payments -H "Content-Type: application/json" -d '{
+docker compose up -d bank_simulator           # bank simulator on http://localhost:8080
+dotnet run --project src/PaymentGateway.Api   # gateway on http://localhost:5067, Swagger at /swagger
+```
+
+Or run everything in containers with `docker compose up --build` – the gateway is then on
+<http://localhost:8090> (Swagger at `/swagger`).
+
+Then take a payment:
+
+```bash
+curl -i -X POST http://localhost:5067/api/payments -H "Content-Type: application/json" -d '{
   "cardNumber": "2222405343248877", "expiryMonth": 12, "expiryYear": 2030,
   "currency": "GBP", "amount": 1050, "cvv": "123"
 }'
 ```
 
+More ready-made requests are in [`PaymentGateway.Api.http`](src/PaymentGateway.Api/PaymentGateway.Api.http).
+
+### Test cards
+
+The [bank simulator](imposters/bank_simulator.ejs) decides by the **last digit** of the card number:
+
+| Last digit | Bank answer | Gateway response |
+|---|---|---|
+| `1`, `3`, `5`, `7`, `9` | Authorized | `201`, `status: Authorized` |
+| `2`, `4`, `6`, `8` | Declined | `201`, `status: Declined` |
+| `0` | `503 Service Unavailable` | `503`, `errorCode: bank_unavailable` |
+
+### Configuration
+
+| Setting (env var) | Default | Notes |
+|---|---|---|
+| `AcquiringBank__BaseUrl` | `http://localhost:8080` | Required; an absolute URL |
+| `AcquiringBank__TimeoutSeconds` | `10` | 1–60 |
+| `Swagger__Enabled` | `false` (`true` in Development and in compose) | |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | When set, traces and metrics are exported there over OTLP |
+
+Invalid settings stop the gateway at startup.
+
+## API
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/payments` | Process a payment |
+| `GET /api/payments/{id}` | Retrieve a processed payment |
+| `GET /health` | Liveness probe |
+
+The full contract, with every field documented, is in Swagger.
+
+### Process a payment – `POST /api/payments`
+
+Every request ends in exactly one outcome:
+
+| Outcome | HTTP | `errorCode` | Safe to retry? | What happened |
+|---|---|---|---|---|
+| **Authorized** / **Declined** | `201` | – | – | The bank decided. The payment is recorded and retrievable at the `Location` header. |
+| **Rejected** | `400` | – | Only once fixed | The request was invalid. The bank was **not** called; nothing was recorded. |
+| Bank unavailable | `503` | `bank_unavailable` | **Yes** | The bank could not be reached, or turned the request away unprocessed: `503`, `408 Request Timeout` or `429 Too Many Requests`. The payment was not made. |
+| Bank error | `502` | `bank_error` | No | The bank refused the request with any other `4xx`. Retrying will fail the same way. |
+| Outcome unknown | `504` | `bank_outcome_unknown` | **No** | The request may have reached the bank, but no usable answer came back: a timeout, a lost connection, an unreadable `200`, any `5xx` other than `503`, or an unexpected status such as `201` or `302`. The payment **may have been authorized** – quote the `attemptId` and `traceId` to support. |
+
+Bank failures are errors, not payment statuses: nothing is recorded and they are never reported as
+Declined.
+
+A successful response:
+
 ```
 HTTP/1.1 201 Created
-Location: https://localhost:7092/api/payments/3fa85f64-5717-4562-b3fc-2c963f66afa6
+Location: http://localhost:5067/api/payments/3fa85f64-5717-4562-b3fc-2c963f66afa6
 
 { "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "status": "Authorized", "cardNumberLastFour": "8877",
   "expiryMonth": 12, "expiryYear": 2030, "currency": "GBP", "amount": 1050 }
 ```
 
-Every response carries its trace id in an `X-Trace-Id` header – the same id that is in the logs, in
-every error body (`traceId`) and in the `traceparent` sent to the bank. Every error is a
-`ProblemDetails`. A Rejected payment lists every invalid field:
+There is no merchant-facing idempotency key: a merchant retry is a new payment.
+
+### Retrieve a payment – `GET /api/payments/{id}`
+
+Returns `200` with exactly the fields of the processing response, or `404` when no payment has that
+id. An id that is not a GUID gets the framework's own `404` for an unmatched route. Retrieval never
+contacts the bank.
+
+### Errors
+
+Every error is a `ProblemDetails` (`application/problem+json`) with a `traceId`.
+
+A **Rejected** payment lists every invalid field at once:
 
 ```json
-{ "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1", "title": "Payment rejected", "status": 400,
+{ "title": "Payment rejected", "status": 400,
   "errors": { "cardNumber": ["Card number must be a string of 14 to 19 digits (0-9)."],
               "currency": ["Currency must be one of: GBP, EUR, USD."] },
   "paymentStatus": "Rejected", "traceId": "4bf92f3577b34da6a3ce929d0e0e4736" }
 ```
 
-Bank failures carry an `errorCode` (`bank_unavailable`, `bank_error` or `bank_outcome_unknown`). Only a
-`504` also carries an `attemptId`: for a `502`/`503` the payment was certainly not made, so an id that
-looks retrievable (and 404s on `GET`) would mislead; a `504`'s outcome is genuinely unknown, so the id
-is a handle to quote to support, not a claim that `GET` will find anything.
+A **bank failure** carries an `errorCode`. Only a `504` also carries an `attemptId`:
 
 ```json
-{ "type": "https://tools.ietf.org/html/rfc9110#section-15.6.4", "title": "Payment could not be confirmed",
-  "status": 504, "detail": "The acquiring bank's answer did not arrive or could not be read, so the payment may have been authorized. Do not retry; quote the traceId to support.",
+{ "title": "Payment could not be confirmed", "status": 504,
+  "detail": "The acquiring bank's answer did not arrive or could not be read, so the payment may have been authorized. Do not retry; quote the traceId to support.",
   "errorCode": "bank_outcome_unknown", "attemptId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
   "traceId": "4bf92f3577b34da6a3ce929d0e0e4736" }
 ```
 
-More requests are in [`PaymentGateway.Api.http`](src/PaymentGateway.Api/PaymentGateway.Api.http);
-the full contract is in Swagger.
+The `attemptId` is a handle to quote to support, not a promise that `GET` will find anything –
+nothing is recorded for a failed attempt. A `502`/`503` omits it because the payment was certainly
+not made, and an id that looks retrievable but 404s would mislead.
 
-## Run
+### Tracing
 
-Requires the .NET 8 SDK and Docker.
-
-```bash
-docker compose up -d bank_simulator           # simulator on http://localhost:8080
-dotnet run --project src/PaymentGateway.Api   # gateway on https://localhost:7092, Swagger at /swagger
-```
-
-Or everything in containers: `docker compose up --build` (gateway on <http://localhost:8090>).
-
-| Setting (env var) | Default | |
-|---|---|---|
-| `AcquiringBank__BaseUrl` | `http://localhost:8080` | required, absolute URL |
-| `AcquiringBank__TimeoutSeconds` | `10` | 1–60 |
-| `Swagger__Enabled` | `false` (Development and compose: `true`) | |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | when set, traces and metrics are exported there (OTLP) |
-
-Invalid settings stop the gateway at startup.
+Every response carries an `X-Trace-Id` header. It is the same id that appears in the logs, in every
+error body (`traceId`) and in the `traceparent` sent to the bank, so one id follows a request end to end.
 
 ## Tests
 
@@ -104,23 +149,22 @@ dotnet test --filter "Category!=E2E"   # unit + integration
 dotnet test --filter "Category=E2E"    # against the real simulator (docker compose up -d bank_simulator)
 ```
 
-- **Unit** – every validation rule at its boundaries, each use-case outcome (a rejected request
-  never reaches the bank; a valid one reaches it exactly once), masking, and the layer rule.
-- **Integration** – the real HTTP pipeline in-process with the bank replaced by WireMock: every
-  response shape, every bank failure (including timeouts and dropped connections), retrieval, and
-  that no card number or CVV reaches a response or a log.
-- **E2E** – Authorized, Declined and unavailable journeys against the real simulator.
+| Level | Covers |
+|---|---|
+| **Unit** | Every validation rule at its boundaries; each use-case outcome (a rejected request never reaches the bank, a valid one reaches it exactly once); masking; the layer dependency rule. |
+| **Integration** | The real HTTP pipeline in-process, with the bank replaced by WireMock: every response shape, every bank failure (including timeouts and dropped connections), retrieval, and that no card number or CVV ever reaches a response or a log. |
+| **E2E** | Against the real simulator: Authorized, Declined, unavailable (`503`) and refused (`502`) journeys; boundary values that must reach the bank; invalid requests that must not; retrieval, including unknown and malformed ids; and an unreachable bank. The simulator's request count proves each payment reaches the bank exactly once, or not at all. |
 
-CI runs all three levels: it starts the simulator with `docker compose` for the E2E tests. A plain
-`dotnet test` includes E2E too, but each E2E test probes `localhost:8080` first and skips itself
-(rather than failing) when the simulator is not running, so a clone without Docker still gets a
-clean run.
+A plain `dotnet test` runs all three levels, but each E2E test first probes `localhost:8080` and
+**skips itself** (rather than failing) when the simulator is not running – so a clone without Docker
+still gets a clean run. CI starts the simulator with `docker compose` and runs all three.
 
-Quality gates: `dotnet build -c Release` (warnings are errors) and `dotnet format --verify-no-changes`.
+Quality gates, also enforced in CI: `dotnet build -c Release` (warnings are errors) and
+`dotnet format --verify-no-changes`.
 
 ## Architecture
 
-One project, hexagonal folders; dependencies point inwards only, enforced by an architecture test.
+One project with hexagonal folders. Dependencies point inwards only, enforced by an architecture test.
 
 ```mermaid
 flowchart LR
@@ -133,163 +177,127 @@ flowchart LR
     Infrastructure -->|POST /payments| Bank[(Bank simulator)]
 ```
 
+```
+src/PaymentGateway.Api/
+├── Domain/           validation rules, Payment, card masking – no framework dependencies
+├── Application/      use cases (process, retrieve), metrics, ports
+├── Http/             controller, wire contracts, result → HTTP mapping, request logging
+└── Infrastructure/   acquiring bank HTTP client, in-memory repository
+test/PaymentGateway.Api.Tests/
+├── Unit/             domain, use cases (with fakes), architecture rule
+├── Integration/      in-process API with WireMock as the bank
+└── EndToEnd/         against the real simulator
+```
+
 ## Design decisions
 
-**Payments**
-- **One bank call, no retries** – a retry could charge the shopper twice.
-- **Only `503` invites a retry**, because only then did the bank certainly not process the payment.
-  A timeout or a connection lost after sending is `504`: the outcome is unknown (see
-  [Unknown outcomes and double charges](#unknown-outcomes-and-double-charges)).
-- **No merchant-facing idempotency key.** The assessment marks it optional, and a gateway-only key
-  (in-memory, lost on restart, per process) protects nothing a production deployment could rely on:
-  see [Unknown outcomes and double charges](#unknown-outcomes-and-double-charges) for what actually
-  closes the double-charge gap, and why it needs the bank's support regardless of what the gateway does.
-- **A `200` the gateway cannot read is an unknown outcome**, not a bank error: the bank processed it.
-  It is logged at `Error` (not `Warning`, unlike the other two bank failure kinds), because it is the
-  one case where the shopper may have been charged with nothing to show for it locally.
-- **No cancellation of the bank call** – once sent, the payment happens whether or not the merchant
-  is still connected, so the call runs to completion (bounded by the bank timeout) and its outcome
-  is recorded. Retrieval does stop when the merchant disconnects.
-- **`201` for Authorized and Declined** – a processed payment is a new, retrievable resource, so it
-  is `Created` with a `Location` header pointing at it; `status` still carries which of the two it was.
-- **Payment ids** are random v4 GUIDs, allocated right before the bank call (not only once it
-  answers), so a bank-failure log entry can still name the attempt for later reconciliation even
-  though nothing is stored under that id when the bank never decided. Only a `504` body returns it (as
-  `attemptId`): a `502`/`503` means the payment was certainly not made, so returning an id that looks
-  retrievable, and isn't, would be misleading.
-- **A malformed id (not a GUID) is a plain `404`**, produced by ASP.NET Core's own routing and
-  `UseStatusCodePages`, the same as any other unmatched route – not a payment-shaped response.
+### Talking to the bank
 
-**Validation**
-- All rules live in the domain (`PaymentRequest.Create`) and every broken rule is reported at once –
-  with one caveat: if the body has more than one field of the wrong JSON *type* (e.g. `amount` and
-  `expiryMonth` both sent as strings), only the first one System.Text.Json's reader hits is reported,
-  because deserialization itself stops there. Every field that deserializes but fails a *value* rule
-  (out of range, wrong length, unsupported currency, …) is still reported together, in one response.
-- Values are never trimmed, padded or case-converted into validity, and numbers must be JSON numbers
-  (`"amount": "1050"` is Rejected). Currencies are `GBP`, `EUR`, `USD`, exact uppercase. Amount is at
-  least 1. A card is valid until the end of its expiry month (UTC), and expires at most 20 years
-  ahead – a later year is a typing error.
-- A body that cannot be read (malformed JSON, a value of the wrong type) is Rejected like any other
-  invalid payment, with fixed messages that never echo the submitted value.
-- The body binds to `Http/Payments/ProcessPaymentRequest` (the wire contract, with Swagger docs); the
-  controller passes its fields straight to `ProcessPaymentService.ProcessAsync`, which has no input
-  type of its own – a use case with one caller and no other adapter doesn't need a second copy of the
-  same six fields just in case one side is renamed. Every field is nullable so a missing value is
-  Rejected instead of silently defaulting. `PaymentResultMapper` converts a validation error's field
-  name to camelCase once, when building the response, so the domain stays free of any wire-format
-  concern.
+- **One bank call, no retries.** A retry could charge the shopper twice.
+- **Only `503`, `408` and `429` invite a retry**, because only then did the bank certainly not process
+  the payment: it was unavailable, timed out waiting for the request, or was rate-limiting.
+  A timeout or a connection lost after sending is a `504`: the outcome is unknown.
+- **A `200` the gateway cannot read is an unknown outcome**, not a bank error – the bank processed
+  it. It is logged at `Error` (the other bank failures log at `Warning`), because it is the one case
+  where the shopper may have been charged with nothing to show for it locally.
+- **The bank call is never cancelled.** Once sent, the payment happens whether or not the merchant is
+  still connected, so the call runs to completion (bounded by the bank timeout) and its outcome is
+  recorded.
 
-**Card data and logs**
-- Only the last four digits are stored or returned; the CVV and full number exist only while the
-  request is handled. The bank's authorization code is stored for reconciliation and disputes, but
-  not returned: it is not card data, and the assessment's response fields do not include it. The assessment's prose mentions a "masked card number", but its field table
-  lists the last four digits, so the response follows the table.
-- Logs are structured JSON and never contain card data.
-- Every request is logged once with its method, matched route template (e.g. `api/payments/{id}`),
-  status code and duration – but not its raw path, which may hold a pasted card number. The route
-  comes from an `IHttpLoggingInterceptor` reading `HttpContext.GetEndpoint()`, added because the
-  built-in `HttpLogging` fields only offer the raw path. For the same reason the framework's hosting
-  logs stay off (they put the path in the scope of every entry); OpenTelemetry's ASP.NET Core and
-  `HttpClient` instrumentation (`AddOpenTelemetry().WithTracing(...)`) is what gives each request and
-  bank call an `Activity`, hence a trace id, in place of the raw path.
-- Every bank call is logged once, in `AcquiringBankClient` (`BankCallCompleted`, or `BankCallFailed` –
-  `Warning`, or `Error` for an unknown outcome), with the payment id, last four, currency and amount, so
-  a bank failure never needs joining two log entries to find the payment it belongs to.
-- Metrics: the `PaymentGateway` meter counts `paymentgateway.payments.outcomes` by `result`
-  (`authorized`, `declined`, `rejected`, `bank_unavailable`, `bank_error`, `bank_outcome_unknown`) –
-  alert on any `bank_outcome_unknown` – next to the built-in `http.server.request.duration` and
-  `http.client.request.duration` (bank latency). One method, `PaymentMetrics.RecordOutcome(ProcessPaymentResult)`,
-  is the single mapping from a result to its tag (a bank-failure tag reuses `BankFailureKind.ToErrorCode()`,
-  the same string the `errorCode` uses). It's called from two places, each counting once per request:
-  `ProcessPaymentService`, for every outcome that reaches the use case; `InvalidModelStateResponder`,
-  for a framework model-binding failure that never reaches it. `PaymentResultMapper` stays a pure
-  result-to-HTTP-response mapper with no metrics side effect.
-- An OTLP exporter for both is registered only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set, so a
-  deployment without a collector configured doesn't spend every export cycle failing to reach
-  `http://localhost:4317`. Locally, without that variable, `dotnet-counters monitor -n
-  PaymentGateway.Api --counters PaymentGateway,Microsoft.AspNetCore.Hosting,System.Net.Http` still
-  shows the counters.
+### Responses and ids
 
-**Scope**
-- Storage is in memory, as the assessment allows: payments are lost on restart.
-- No authentication: any caller holding a payment id can retrieve it.
-- TLS is expected to be terminated upstream; the gateway serves HTTP and never redirects to HTTPS.
-- The runtime image is Ubuntu Chiseled (`aspnet:8.0-noble-chiseled`): no shell, no package manager,
-  nothing beyond the ASP.NET Core runtime. `/health` is for the orchestrator's HTTP probe – liveness
-  only. A readiness probe that also called the acquiring bank was considered and rejected: it would
-  let a slow or unhealthy bank take the gateway itself out of rotation, cascading a bank outage into
-  merchants losing even a Rejected/validation response.
+- **`201 Created` for Authorized and Declined.** A processed payment is a new, retrievable resource,
+  so it gets a `Location` header; `status` says which of the two it was.
+- **Payment ids are random v4 GUIDs, allocated just before the bank call** – not once it answers – so
+  a bank-failure log entry can still name the attempt for later reconciliation. Only a `504` returns
+  that id (as `attemptId`); see [Errors](#errors).
+- **A malformed id is a plain `404`**, produced by ASP.NET Core routing and `UseStatusCodePages` like
+  any other unmatched route – not a payment-shaped response.
 
-## Unknown outcomes and double charges
+### Validation
 
-**Why `504` exists.** When the request reaches the bank and its answer is lost (timeout, dropped
-connection, an unreadable `200`), no gateway can tell "never arrived" from "authorized, reply lost".
-Exactly-once over a network is impossible; payment systems get *effectively once* by letting the
-sender repeat and making every receiver discard duplicates. This path has two hops, and only the
-first discards duplicates today:
+- **All rules live in the domain** (`PaymentRequest.Create`), and every broken rule is reported at once.
+  - *Caveat:* if more than one field has the wrong JSON **type** (e.g. `amount` and `expiryMonth` both
+    sent as strings), only the first one System.Text.Json hits is reported, because deserialization
+    stops there. Every field that deserializes but breaks a **value** rule is still reported together.
+- **Values are never trimmed, padded or case-converted into validity**, and numbers must be JSON
+  numbers (`"amount": "1050"` is Rejected).
+- **The rules:**
+  - Card number: 14–19 ASCII digits.
+  - Expiry: month 1–12; the card is valid until the end of its expiry month (UTC), and at most
+    20 years ahead – a later year is a typing error.
+  - Currency: `GBP`, `EUR` or `USD`, exact uppercase.
+  - Amount: a whole number of at least 1, in the minor unit (`1050` = 10.50).
+  - CVV: 3–4 ASCII digits.
+- **An unreadable body** (malformed JSON, a value of the wrong type) is Rejected like any other invalid
+  payment, with fixed messages that never echo the submitted value.
+- **Every request field is nullable**, so a missing value is Rejected instead of silently defaulting.
+- **No separate use-case input type.** The body binds to `Http/Payments/ProcessPaymentRequest` (the wire
+  contract, with Swagger docs), and the controller passes its fields straight to
+  `ProcessPaymentService.ProcessAsync`. A use case with one caller doesn't need a second copy of the
+  same six fields. `PaymentResultMapper` converts error field names to camelCase when building the
+  response, keeping wire-format concerns out of the domain.
 
-| Hop | Duplicates discarded? |
-|---|---|
-| Merchant → gateway | No – no `Idempotency-Key`; see below for why one wasn't built |
-| Gateway → bank | No – the simulator treats every `POST /payments` as a new charge and has no way to cancel or look up an attempt |
+### Card data
 
-So `504` is the honest answer: the gateway records nothing, logs the attempt at `Error` with its
-payment id, last four, amount and trace id, and tells the merchant not to retry.
+- **Only the last four digits are stored or returned.** The full number and CVV exist only while the
+  request is handled.
+- **Last four, not a masked number.** The assessment's prose mentions a "masked card number", but its
+  field table lists the last four digits, so the response follows the table.
+- **The bank's authorization code is stored but not returned.** Reconciliation and disputes need it;
+  it is not card data, and the assessment's response fields don't include it.
 
-**A third way to lose the record: the write after authorization can itself fail.** If
-`IPaymentRepository.AddAsync` throws after the bank already authorized (`ProcessPaymentService.AuthorizeAsync`),
-the shopper is charged, nothing is stored, and the merchant gets an unhandled `500` with no `attemptId` to
-quote – worse than a `504`, which at least names the attempt. This can't happen against today's in-memory
-store, but it becomes the most important failure mode the moment a real database is introduced. *Fix:*
-write a `Pending` payment *before* the bank call (not after), so a write failure happens before the shopper
-is charged instead of after, and a crash between the two leaves a `Pending` row a recovery job can resolve
-against the bank instead of a charge with no record at all.
+### Logging and metrics
 
-**Why no merchant-facing `Idempotency-Key`.** The assessment marks it optional, and a gateway-only
-key is weak protection: it would need to be in-memory (this gateway keeps no other durable state),
-so it is lost on restart and not shared across instances – exactly when a merchant is most likely to
-retry. Closing the gap for real needs the bank-side step below regardless, at which point a
-gateway-side key adds complexity without moving the needle on the two failure modes that matter:
+- **Structured JSON logs that never contain card data.**
+- **One log entry per request** with its method, matched route template (e.g. `api/payments/{id}`),
+  status code and duration – but **not the raw path**, which could hold a pasted card number.
+  - The route template comes from an `IHttpLoggingInterceptor` reading `HttpContext.GetEndpoint()`,
+    since the built-in `HttpLogging` fields only offer the raw path.
+  - For the same reason the framework's hosting logs are off (they put the path in every entry's
+    scope). OpenTelemetry's ASP.NET Core and `HttpClient` instrumentation gives each request and bank
+    call an `Activity` – and so a trace id – instead.
+- **One log entry per bank call**, in `AcquiringBankClient`: `BankCallCompleted` or `BankCallFailed`
+  (`Warning`, or `Error` for an unknown outcome), with the payment id, last four, currency and amount.
+  Investigating a bank failure never needs joining two entries.
+- **A payment the bank decided but the gateway could not store** logs `PaymentNotRecorded` at `Error`,
+  with the payment id, status, authorization code, currency and amount, then fails with a `500`. An
+  Authorized shopper has been charged with no record to retrieve, so the entry carries what
+  reconciliation or a void needs. **Alert on it.**
+- **Metrics.** The `PaymentGateway` meter counts `paymentgateway.payments.outcomes` by `result`:
+  `authorized`, `declined`, `rejected`, `bank_unavailable`, `bank_error`, `bank_outcome_unknown`.
+  **Alert on any `bank_outcome_unknown`.** Request and bank latency come from the built-in
+  `http.server.request.duration` and `http.client.request.duration`; the former also counts
+  retrievals by route and status (`200` found, `404` not found), so they need no counter of their own.
+  Storage has no latency metric: it is in memory.
+  - `PaymentMetrics.RecordOutcome` is the single mapping from a result to its tag; bank-failure tags
+    reuse `BankFailureKind.ToErrorCode()`, the same string as the response's `errorCode`, so the two
+    cannot drift apart.
+  - It is called once per request, from `ProcessPaymentService` (every outcome that reaches the use
+    case) or `InvalidModelStateResponder` (a model-binding failure that never does).
+    `PaymentResultMapper` stays a pure mapper with no metrics side effect.
+- **The OTLP exporter is opt-in** via `OTEL_EXPORTER_OTLP_ENDPOINT`, so a deployment without a
+  collector doesn't fail every export cycle trying to reach `http://localhost:4317`. Locally, use:
 
-- **The merchant retries without any correlation** after losing a `201` on their side – the gateway
-  cannot tell it is the same payment. *Fix:* an `Idempotency-Key` header, but durable and shared
-  across instances (see below), not the in-memory version that would only mask the gap.
-- **The merchant retries a `504`** – the bank-side step below resolves this by making the *bank*
-  idempotent, so any retry (with or without a gateway-side key) reaches it as the same request.
+  ```bash
+  dotnet-counters monitor -n PaymentGateway.Api --counters PaymentGateway,Microsoft.AspNetCore.Hosting,System.Net.Http
+  ```
 
-**What resolves it in production – deliberately not built here.** Both need the acquiring bank's
-support, which the provided simulator lacks; building them would mean writing that support into the
-simulator ourselves, so the tests would only prove the gateway works against a bank we wrote to fit it.
+### Scope and deployment
 
-- **Bank-side idempotency.** Send a `reference` derived from the merchant and payment (e.g. a UUIDv5
-  of a durable, shared `Idempotency-Key`), so every retry of one payment – from any instance, after
-  any restart – reaches the bank as the *same* request, and the bank answers a repeat with the
-  original result. On an unknown outcome the gateway can then safely re-send and get the real
-  Authorized/Declined.
-- **Timeout reversal**, the card networks' fallback: if the bank still cannot answer, send a reversal
-  for that reference so the payment is certainly not made and the merchant gets a definite "retry is
-  safe". The bank must refuse a late authorization for a reversed reference.
-
-## Not built (production next steps)
-
-Merchant authentication, with retrieval and a durable, shared `Idempotency-Key` scoped per merchant
-(see [above](#unknown-outcomes-and-double-charges) for why an in-memory, per-process version wasn't
-built instead); bank-side idempotency and timeout reversals (also above); persistent storage; PCI DSS
-scope reduction (tokenisation); a circuit breaker around the bank; an actually-configured OTLP
-collector (the exporter is wired and opt-in via `OTEL_EXPORTER_OTLP_ENDPOINT`, but nothing is
-deployed to receive it today); a reconciliation path for a `504` – today a retry just gets a fresh
-`504`, and `GET` can never find the `attemptId` since nothing was recorded; a `Pending`/`Unknown`
-payment status that `GET` could return would close that gap.
-
-**Versioning** – not built, and no versioning scheme is exposed today. With more time this would be
-an additive-only contract (new optional fields, new enum values merchants must tolerate) for as long
-as possible, and a breaking change would go behind a URL segment (`/api/v2/payments`) so existing
-integrations keep working on `/api/payments` unchanged.
+- **In-memory storage**, as the assessment allows: payments are lost on restart.
+- **No authentication**: any caller holding a payment id can retrieve it.
+- **TLS is terminated upstream.** The gateway serves HTTP and never redirects to HTTPS – redirecting
+  after a card number was already sent in clear protects nothing.
+- **Ubuntu Chiseled runtime image** (`aspnet:8.0-noble-chiseled`), running as non-root: no shell, no
+  package manager, nothing beyond the ASP.NET Core runtime.
+- **`/health` is liveness only.** A readiness probe that also called the bank was rejected: it would
+  let a slow bank take the gateway out of rotation, turning a bank outage into merchants losing even
+  their validation (Rejected) responses.
 
 ## How this was built
 
-Spec-first and test-first with Spec Kit, governed by the project
-[constitution](.specify/memory/constitution.md): one folder per use case in [`specs/`](specs/). These
-are process artifacts, not required reading – this README and the code are current, and
+Spec-first and test-first with [Spec Kit](https://github.com/github/spec-kit), with one folder per
+use case in [`specs/`](specs/).
+These are process artifacts, not required reading: this README and the code are current, and
 [`specs/README.md`](specs/README.md) lists what changed since the specs were written.

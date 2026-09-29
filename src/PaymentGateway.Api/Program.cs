@@ -21,9 +21,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
 
-// Gives every request/bank-call an Activity (hence a trace id) in place of hosting diagnostics
-// logging, which is off because it would put the raw path (may hold a pasted card number) in scope.
-// The OTLP exporter is opt-in, so a deployment without a collector doesn't fail every export cycle.
 OpenTelemetryBuilder otel = builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation())
     .WithMetrics(metrics => metrics.AddMeter(PaymentMetrics.MeterName).AddAspNetCoreInstrumentation().AddHttpClientInstrumentation());
@@ -32,7 +29,6 @@ if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP
     otel.UseOtlpExporter();
 }
 
-// Avoids a duplicate "request field is required" error next to the unreadable-body error.
 builder.Services.AddControllers(options => options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
     .AddJsonOptions(options =>
     {
@@ -44,7 +40,10 @@ builder.Services.AddControllers(options => options.SuppressImplicitRequiredAttri
         context.HttpContext.RequestServices.GetRequiredService<InvalidModelStateResponder>().Respond(context));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
-    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml")));
+{
+    options.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, $"{typeof(Program).Assembly.GetName().Name}.xml"));
+    options.SupportNonNullableReferenceTypes();
+});
 builder.Services.AddHealthChecks();
 
 // No path: it may hold a pasted card number (the interceptor adds the route template instead).
@@ -77,11 +76,13 @@ builder.Services.AddHttpClient<IAcquiringBank, AcquiringBankClient>((services, c
 });
 
 builder.Services.AddProblemDetails(options => options.CustomizeProblemDetails = context =>
-    context.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString());
+{
+    context.ProblemDetails.Type = null;
+    context.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString();
+});
 
 var app = builder.Build();
 
-// First, so it also catches exceptions thrown by routing/logging/everything below it.
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
@@ -108,8 +109,6 @@ if (app.Configuration.GetValue<bool>("Swagger:Enabled"))
 
 app.MapControllers();
 
-// Liveness only: a readiness probe that also called the bank could take the gateway itself out of
-// rotation over a bank outage, which is worse than the outage.
 app.MapHealthChecks("/health").WithHttpLogging(HttpLoggingFields.None);
 
 app.Run();

@@ -140,6 +140,34 @@ public class ProcessPaymentServiceTests
         AssertNoCardData(record);
     }
 
+    [Theory]
+    [MemberData(nameof(BankDecisions))]
+    public async Task Process_WhenRecordingFails_LogsPaymentNotRecordedAndRethrows(BankAuthorizationResult decision, PaymentStatus expectedStatus)
+    {
+        // Arrange
+        FakeAcquiringBank bank = new(decision);
+        InvalidOperationException failure = new("store unavailable");
+        FakeLogger<ProcessPaymentService> logger = new();
+        ProcessPaymentService service = CreateService(bank, new FakePaymentRepository { AddFailure = failure }, logger);
+
+        // Act
+        InvalidOperationException thrown = await Assert.ThrowsAsync<InvalidOperationException>(() => ProcessValidAsync(service));
+
+        // Assert
+        Assert.Same(failure, thrown);
+        FakeLogRecord record = Assert.Single(logger.Collector.GetSnapshot());
+        Assert.Equal(1002, record.Id.Id);
+        Assert.Equal("PaymentNotRecorded", record.Id.Name);
+        Assert.Equal(LogLevel.Error, record.Level);
+        Assert.Same(failure, record.Exception);
+        Assert.Equal(bank.LastPaymentId.ToString(), record.GetStructuredStateValue("paymentId"));
+        Assert.Equal(expectedStatus.ToString(), record.GetStructuredStateValue("status"));
+        Assert.Equal(expectedStatus == PaymentStatus.Authorized ? AuthorizationCode : null, record.GetStructuredStateValue("authorizationCode"));
+        Assert.Equal("GBP", record.GetStructuredStateValue("currency"));
+        Assert.Equal("100", record.GetStructuredStateValue("amount"));
+        AssertNoCardData(record);
+    }
+
     [Fact]
     public async Task Process_WhenCommandIsInvalid_LogsPaymentRejectedWithFieldNamesOnly()
     {
@@ -173,8 +201,7 @@ public class ProcessPaymentServiceTests
         // Act
         ProcessPaymentResult result = await ProcessValidAsync(service);
 
-        // Assert – the bank-failure log (payment id, last four, level by kind) lives in
-        // AcquiringBankClient, the one place with both the id and the HTTP detail; see AcquiringBankClientTests.
+        // Assert
         Assert.Equal(Assert.IsType<ProcessPaymentResult.BankFailed>(result).PaymentId, bank.LastPaymentId);
     }
 

@@ -62,7 +62,6 @@ public sealed partial class ProcessPaymentService
 
     private async Task<ProcessPaymentResult> AuthorizeAsync(PaymentRequest request)
     {
-        // Allocated before the bank call so a failure log can still name the attempt.
         Guid paymentId = Guid.NewGuid();
         BankAuthorizationResult decision = await _acquiringBank.RequestAuthorizationAsync(request, paymentId);
 
@@ -75,9 +74,17 @@ public sealed partial class ProcessPaymentService
             ? Payment.Authorized(paymentId, request, authorized.AuthorizationCode)
             : Payment.Declined(paymentId, request);
 
-        // If this throws, the bank has already decided but nothing is stored: see "Unknown outcomes
-        // and double charges" in the README for why, and what a production store needs to do instead.
-        await _paymentRepository.AddAsync(payment);
+        try
+        {
+            await _paymentRepository.AddAsync(payment);
+        }
+        catch (Exception exception)
+        {
+            // The bank has decided (an Authorized shopper is charged) but there is no record to retrieve.
+            LogPaymentNotRecorded(_logger, exception, payment.Id, payment.Status, payment.AuthorizationCode, payment.Currency, payment.Amount);
+            throw;
+        }
+
         LogPaymentProcessed(_logger, payment.Id, payment.Status, payment.Currency, payment.Amount);
         return new ProcessPaymentResult.Processed(payment);
     }

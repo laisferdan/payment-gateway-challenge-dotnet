@@ -2,7 +2,6 @@ using System.Net.Sockets;
 
 namespace PaymentGateway.Api.Tests.EndToEnd;
 
-// Checked once per run, so a plain `dotnet test` without Docker skips E2E tests instead of failing them.
 internal static class SimulatorAvailability
 {
     private const string Host = "localhost";
