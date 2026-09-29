@@ -4,8 +4,6 @@ using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.HttpLogging;
 using Microsoft.Extensions.Options;
 
-using OpenTelemetry;
-using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
 using PaymentGateway.Api.Application.Ports;
@@ -21,13 +19,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
 
-OpenTelemetryBuilder otel = builder.Services.AddOpenTelemetry()
-    .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation())
-    .WithMetrics(metrics => metrics.AddMeter(PaymentMetrics.MeterName).AddAspNetCoreInstrumentation().AddHttpClientInstrumentation());
-if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")))
-{
-    otel.UseOtlpExporter();
-}
+// Nothing is exported: this guarantees every request and bank call an Activity, hence a trace id
+// for logs, X-Trace-Id, error bodies and the traceparent sent to the bank (hosting logs are off).
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation());
 
 builder.Services.AddControllers(options => options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true)
     .AddJsonOptions(options =>
