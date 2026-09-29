@@ -9,16 +9,27 @@ public sealed class SimulatorGatewayFactory : WebApplicationFactory<Program>
 {
     public const string SimulatorUrl = "http://localhost:8080";
 
+    private readonly string _bankUrl;
+
+    public SimulatorGatewayFactory()
+        : this(SimulatorUrl)
+    {
+    }
+
+    // Internal: xUnit requires a fixture's only public constructor to be the parameterless one.
+    internal SimulatorGatewayFactory(string bankUrl)
+    {
+        _bankUrl = bankUrl;
+    }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Production");
         builder.ConfigureAppConfiguration(config => config.AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["AcquiringBank:BaseUrl"] = SimulatorUrl,
+            ["AcquiringBank:BaseUrl"] = _bankUrl,
         }));
 
-        // These tests assert on HTTP responses against the real simulator, not on logs: leaving
-        // Program's JSON console logger on just floods `dotnet test` output with every request.
         builder.ConfigureLogging(logging => logging.ClearProviders());
     }
 }

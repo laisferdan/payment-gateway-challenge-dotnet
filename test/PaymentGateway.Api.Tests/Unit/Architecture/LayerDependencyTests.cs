@@ -2,7 +2,6 @@ using NetArchTest.Rules;
 
 namespace PaymentGateway.Api.Tests.Unit.Architecture;
 
-// One project cannot enforce the hexagon's dependency rule at compile time, so these tests do.
 public class LayerDependencyTests
 {
     private const string Domain = "PaymentGateway.Api.Domain";

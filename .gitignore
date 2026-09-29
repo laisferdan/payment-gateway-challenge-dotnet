@@ -456,8 +456,5 @@ $RECYCLE.BIN/
 ## Personal notes
 .claude
 .specify/*
-!.specify/memory/
-.specify/memory/*
-# The constitution governs the specs and the code, so it ships with them.
-!.specify/memory/constitution.md
+!.specify/memory
 coverage/

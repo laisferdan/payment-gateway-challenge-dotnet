@@ -10,6 +10,11 @@ public sealed partial class ProcessPaymentService
         Message = "Payment {paymentId} processed: {status}, {currency} {amount}")]
     private static partial void LogPaymentProcessed(ILogger logger, Guid paymentId, PaymentStatus status, string currency, int amount);
 
+    [LoggerMessage(EventId = 1002, EventName = "PaymentNotRecorded", Level = LogLevel.Error,
+        Message = "Payment {paymentId} was {status} by the bank (authorization code {authorizationCode}) but could not be recorded: {currency} {amount}")]
+    private static partial void LogPaymentNotRecorded(
+        ILogger logger, Exception exception, Guid paymentId, PaymentStatus status, string? authorizationCode, string currency, int amount);
+
     [LoggerMessage(EventId = 1001, EventName = "PaymentRejected", Level = LogLevel.Information,
         Message = "Payment rejected: invalid {invalidFields}")]
     private static partial void LogPaymentRejected(ILogger logger, string invalidFields);

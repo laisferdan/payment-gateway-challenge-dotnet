@@ -12,7 +12,6 @@ using PaymentGateway.Api.Domain.Payments;
 
 namespace PaymentGateway.Api.Http.Payments;
 
-// Errors go through the framework's ProblemDetailsFactory so they share its type and traceId.
 public sealed class PaymentResultMapper
 {
     public const string ProblemJson = "application/problem+json";
@@ -53,7 +52,6 @@ public sealed class PaymentResultMapper
             : Problem(_problemDetailsFactory.CreateProblemDetails(httpContext, StatusCodes.Status404NotFound, NotFoundTitle, detail: NotFoundDetail));
     }
 
-    // Every source of a Rejected response (domain or model-binding) goes through here.
     public IActionResult PaymentRejected(IEnumerable<(string Field, string Message)> errors, HttpContext httpContext)
     {
         ModelStateDictionary modelState = new();
@@ -68,7 +66,6 @@ public sealed class PaymentResultMapper
         return Problem(problem);
     }
 
-    // Only 503 invites a retry: the payment was certainly not made.
     private IActionResult BankFailure(Guid paymentId, BankFailureKind kind, HttpContext httpContext)
     {
         (int status, string title, string detail) = kind switch
@@ -85,7 +82,6 @@ public sealed class PaymentResultMapper
         problem.Extensions["errorCode"] = kind.ToErrorCode();
         if (kind == BankFailureKind.OutcomeUnknown)
         {
-            // Only here: a 502/503 means the payment was certainly not made, so this id would mislead.
             problem.Extensions["attemptId"] = paymentId;
         }
 
@@ -94,6 +90,7 @@ public sealed class PaymentResultMapper
 
     private static ObjectResult Problem(ProblemDetails problem)
     {
+        problem.Type = null;
         ObjectResult result = new(problem) { StatusCode = problem.Status };
         result.ContentTypes.Add(ProblemJson);
         return result;

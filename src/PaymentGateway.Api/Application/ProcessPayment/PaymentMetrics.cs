@@ -20,8 +20,6 @@ public sealed class PaymentMetrics
         _outcomes = meter.CreateCounter<long>(OutcomesInstrument, unit: "{payment}", description: "Payment requests by outcome.");
     }
 
-    // The one mapping from a result to its tag; a bank failure reuses BankFailureKind.ToErrorCode(),
-    // the same string the response body's errorCode uses.
     public void RecordOutcome(ProcessPaymentResult result)
     {
         string tag = result switch

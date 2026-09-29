@@ -57,8 +57,6 @@ public class RequestLoggingTests : IClassFixture<WireMockBankFixture>
         await client.GetAsync("/api/payments/4111111111111111");
 
         // Assert
-        // "4111111111111111" fails the {id:guid} constraint, so no endpoint matches and there is no
-        // route template to log; the interceptor must still not fall back to logging the raw path.
         FakeLogRecord entry = Assert.Single(factory.LogCollector.GetSnapshot(), record => record.Category == HttpLoggingCategory);
         Assert.Equal("404", entry.GetStructuredStateValue("StatusCode"));
         Assert.Null(entry.GetStructuredStateValue("Route"));

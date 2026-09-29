@@ -19,13 +19,8 @@ public sealed class InMemoryPaymentRepository : IPaymentRepository
         return Task.CompletedTask;
     }
 
-    public Task<Payment?> GetByIdAsync(Guid id, CancellationToken cancellationToken)
+    public Task<Payment?> GetByIdAsync(Guid id)
     {
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return Task.FromCanceled<Payment?>(cancellationToken);
-        }
-
         return Task.FromResult(_payments.TryGetValue(id, out Payment? payment) ? payment : null);
     }
 }
