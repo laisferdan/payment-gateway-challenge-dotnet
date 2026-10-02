@@ -217,11 +217,12 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
     }
 
     [Theory]
-    [InlineData(503, "", BankFailureKind.Unavailable, "503", LogLevel.Warning)]
-    [InlineData(400, "", BankFailureKind.Error, "400", LogLevel.Warning)]
-    [InlineData(200, "not json", BankFailureKind.OutcomeUnknown, "200", LogLevel.Error)]
+    [InlineData(503, "", BankFailureKind.Unavailable, "503", LogLevel.Warning, "UnexpectedStatus")]
+    [InlineData(400, "", BankFailureKind.Error, "400", LogLevel.Warning, "UnexpectedStatus")]
+    [InlineData(200, "not json", BankFailureKind.OutcomeUnknown, "200", LogLevel.Error, "UnreadableBody")]
+    [InlineData(200, """{"authorized":true,"authorization_code":""}""", BankFailureKind.OutcomeUnknown, "200", LogLevel.Error, "IncompleteBody")]
     public async Task RequestAuthorization_WhenBankFails_LogsAtTheRightLevelWithTheHttpStatus(
-        int statusCode, string bankBody, BankFailureKind expectedKind, string expectedHttpStatus, LogLevel expectedLevel)
+        int statusCode, string bankBody, BankFailureKind expectedKind, string expectedHttpStatus, LogLevel expectedLevel, string expectedReason)
     {
         // Arrange
         StubBank(statusCode, bankBody);
@@ -242,7 +243,42 @@ public class AcquiringBankClientTests : IClassFixture<WireMockBankFixture>
         Assert.NotNull(entry.GetStructuredStateValue("elapsedMs"));
         Assert.Equal("GBP", entry.GetStructuredStateValue("currency"));
         Assert.Equal("100", entry.GetStructuredStateValue("amount"));
+        Assert.Equal(expectedReason, entry.GetStructuredStateValue("failureReason"));
         Assert.DoesNotContain("2222405343248877", LogText.Of(entry));
+    }
+
+    [Fact]
+    public async Task RequestAuthorization_WhenBankDoesNotAnswerInTime_LogsTimeoutWithTheException()
+    {
+        // Arrange
+        using WireMockBankFixture slowBank = new();
+        StubBank(slowBank, 200, """{"authorized":true,"authorization_code":"abc"}""", TimeSpan.FromSeconds(3));
+        using PaymentGatewayFactory factory = new(slowBank.Url, PaymentGatewayFactory.ShortBankTimeout);
+        IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
+
+        // Act
+        await client.RequestAuthorizationAsync(ValidRequest, PaymentId);
+
+        // Assert
+        FakeLogRecord entry = Assert.Single(factory.LogCollector.GetSnapshot(), record => record.Id.Name == "BankCallFailed");
+        Assert.Equal("Timeout", entry.GetStructuredStateValue("failureReason"));
+        Assert.IsAssignableFrom<OperationCanceledException>(entry.Exception);
+    }
+
+    [Fact]
+    public async Task RequestAuthorization_WhenBankCannotBeReached_LogsTheConnectionErrorWithTheException()
+    {
+        // Arrange
+        using PaymentGatewayFactory factory = new($"http://127.0.0.1:{UnusedPort()}");
+        IAcquiringBank client = factory.Services.GetRequiredService<IAcquiringBank>();
+
+        // Act
+        await client.RequestAuthorizationAsync(ValidRequest, PaymentId);
+
+        // Assert
+        FakeLogRecord entry = Assert.Single(factory.LogCollector.GetSnapshot(), record => record.Id.Name == "BankCallFailed");
+        Assert.Equal(nameof(HttpRequestError.ConnectionError), entry.GetStructuredStateValue("failureReason"));
+        Assert.IsType<HttpRequestException>(entry.Exception);
     }
 
     [Theory]

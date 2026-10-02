@@ -26,25 +26,25 @@ public sealed partial class AcquiringBankClient : IAcquiringBank
     public async Task<BankAuthorizationResult> RequestAuthorizationAsync(PaymentRequest request, Guid paymentId)
     {
         long started = Stopwatch.GetTimestamp();
-        (BankAuthorizationResult result, int? httpStatusCode) = await PostPaymentAsync(request);
-        LogOutcome(request, paymentId, result, httpStatusCode, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
-        return result;
+        BankCallOutcome outcome = await PostPaymentAsync(request);
+        LogOutcome(request, paymentId, outcome, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        return outcome.Result;
     }
 
-    private async Task<(BankAuthorizationResult Result, int? HttpStatusCode)> PostPaymentAsync(PaymentRequest request)
+    private async Task<BankCallOutcome> PostPaymentAsync(PaymentRequest request)
     {
         try
         {
             using HttpResponseMessage response = await _httpClient.PostAsJsonAsync(PaymentsPath, BankPaymentRequest.From(request));
-            return (await ClassifyResponseAsync(response), (int)response.StatusCode);
+            return await ClassifyResponseAsync(response);
         }
         catch (HttpRequestException exception) when (NeverReachedTheBank(exception))
         {
-            return (new BankAuthorizationResult.Failed(BankFailureKind.Unavailable), null);
+            return BankCallOutcome.Failed(BankFailureKind.Unavailable, exception.HttpRequestError.ToString(), exception: exception);
         }
         catch (Exception exception) when (exception is HttpRequestException or OperationCanceledException)
         {
-            return (new BankAuthorizationResult.Failed(BankFailureKind.OutcomeUnknown), null);
+            return BankCallOutcome.Failed(BankFailureKind.OutcomeUnknown, DescribeTransportFailure(exception), exception: exception);
         }
     }
 
@@ -55,28 +55,46 @@ public sealed partial class AcquiringBankClient : IAcquiringBank
             or HttpRequestError.SecureConnectionError;
     }
 
-    private static async Task<BankAuthorizationResult> ClassifyResponseAsync(HttpResponseMessage response)
+    private static string DescribeTransportFailure(Exception exception)
     {
-        return response.StatusCode switch
+        return exception switch
         {
-            HttpStatusCode.OK => ClassifyBody(await ReadBodyOrNullAsync(response)),
-            HttpStatusCode.ServiceUnavailable or HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
-                => new BankAuthorizationResult.Failed(BankFailureKind.Unavailable),
-            >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError => new BankAuthorizationResult.Failed(BankFailureKind.Error),
-            _ => new BankAuthorizationResult.Failed(BankFailureKind.OutcomeUnknown),
+            HttpRequestException httpRequestException => httpRequestException.HttpRequestError.ToString(),
+            OperationCanceledException { InnerException: TimeoutException } => "Timeout",
+            _ => "Canceled",
         };
     }
 
-    private static async Task<BankPaymentResponse?> ReadBodyOrNullAsync(HttpResponseMessage response)
+    private static async Task<BankCallOutcome> ClassifyResponseAsync(HttpResponseMessage response)
     {
+        int httpStatusCode = (int)response.StatusCode;
+        return response.StatusCode switch
+        {
+            HttpStatusCode.OK => await ClassifyBodyAsync(response, httpStatusCode),
+            HttpStatusCode.ServiceUnavailable or HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests
+                => BankCallOutcome.Failed(BankFailureKind.Unavailable, "UnexpectedStatus", httpStatusCode),
+            >= HttpStatusCode.BadRequest and < HttpStatusCode.InternalServerError
+                => BankCallOutcome.Failed(BankFailureKind.Error, "UnexpectedStatus", httpStatusCode),
+            _ => BankCallOutcome.Failed(BankFailureKind.OutcomeUnknown, "UnexpectedStatus", httpStatusCode),
+        };
+    }
+
+    private static async Task<BankCallOutcome> ClassifyBodyAsync(HttpResponseMessage response, int httpStatusCode)
+    {
+        BankPaymentResponse? body;
         try
         {
-            return await response.Content.ReadFromJsonAsync<BankPaymentResponse>();
+            body = await response.Content.ReadFromJsonAsync<BankPaymentResponse>();
         }
         catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {
-            return null;
+            return BankCallOutcome.Failed(BankFailureKind.OutcomeUnknown, "UnreadableBody", httpStatusCode, exception);
         }
+
+        BankAuthorizationResult result = ClassifyBody(body);
+        return result is BankAuthorizationResult.Failed
+            ? new BankCallOutcome(result, httpStatusCode, "IncompleteBody")
+            : new BankCallOutcome(result, httpStatusCode);
     }
 
     private static BankAuthorizationResult ClassifyBody(BankPaymentResponse? body)

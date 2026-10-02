@@ -7,18 +7,18 @@ namespace PaymentGateway.Api.Infrastructure.AcquiringBank;
 
 public sealed partial class AcquiringBankClient
 {
-    private void LogOutcome(PaymentRequest request, Guid paymentId, BankAuthorizationResult result, int? httpStatusCode, long elapsedMs)
+    private void LogOutcome(PaymentRequest request, Guid paymentId, BankCallOutcome outcome, long elapsedMs)
     {
-        if (result is BankAuthorizationResult.Failed failed)
+        if (outcome.Result is BankAuthorizationResult.Failed failed)
         {
             LogLevel level = failed.Kind == BankFailureKind.OutcomeUnknown ? LogLevel.Error : LogLevel.Warning;
             LogBankCallFailed(
-                _logger, level, paymentId, request.CardNumberLastFour, failed.Kind, httpStatusCode, elapsedMs,
-                request.Currency, request.Amount);
+                _logger, level, outcome.Exception, paymentId, request.CardNumberLastFour, failed.Kind, outcome.FailureReason,
+                outcome.HttpStatusCode, elapsedMs, request.Currency, request.Amount);
             return;
         }
 
-        string decision = result is BankAuthorizationResult.Authorized
+        string decision = outcome.Result is BankAuthorizationResult.Authorized
             ? nameof(BankAuthorizationResult.Authorized)
             : nameof(BankAuthorizationResult.Declined);
         LogBankCallCompleted(_logger, paymentId, decision, elapsedMs);
@@ -30,8 +30,8 @@ public sealed partial class AcquiringBankClient
 
     [LoggerMessage(EventId = 2001, EventName = "BankCallFailed",
         Message = "Payment {paymentId} (card ending {cardNumberLastFour}) could not be processed: bank {failureKind} " +
-            "(HTTP {httpStatusCode}) after {elapsedMs} ms, {currency} {amount}")]
+            "({failureReason}, HTTP {httpStatusCode}) after {elapsedMs} ms, {currency} {amount}")]
     private static partial void LogBankCallFailed(
-        ILogger logger, LogLevel level, Guid paymentId, string cardNumberLastFour, BankFailureKind failureKind,
-        int? httpStatusCode, long elapsedMs, string currency, int amount);
+        ILogger logger, LogLevel level, Exception? exception, Guid paymentId, string cardNumberLastFour, BankFailureKind failureKind,
+        string? failureReason, int? httpStatusCode, long elapsedMs, string currency, int amount);
 }
