@@ -10,7 +10,12 @@ public class ProcessPaymentCommandTests
         // Arrange
         ProcessPaymentCommand command = new()
         {
-            CardNumber = "2222405343248877", ExpiryMonth = 4, ExpiryYear = 2027, Currency = "GBP", Amount = 1050, Cvv = "987",
+            CardNumber = "2222405343248877",
+            ExpiryMonth = 4,
+            ExpiryYear = 2027,
+            Currency = "GBP",
+            Amount = 1050,
+            Cvv = "987",
         };
 
         // Act

@@ -79,7 +79,12 @@ public class ProcessPaymentServiceTests
         // Act
         ProcessPaymentResult result = await service.ProcessAsync(new ProcessPaymentCommand
         {
-            CardNumber = "1234", ExpiryMonth = null, ExpiryYear = null, Currency = "gbp", Amount = 0, Cvv = null,
+            CardNumber = "1234",
+            ExpiryMonth = null,
+            ExpiryYear = null,
+            Currency = "gbp",
+            Amount = 0,
+            Cvv = null,
         });
 
         // Assert
@@ -180,7 +185,12 @@ public class ProcessPaymentServiceTests
         // Act
         await service.ProcessAsync(new ProcessPaymentCommand
         {
-            CardNumber = CardNumber + "x", ExpiryMonth = 4, ExpiryYear = 2027, Currency = "gbp", Amount = 100, Cvv = Cvv,
+            CardNumber = CardNumber + "x",
+            ExpiryMonth = 4,
+            ExpiryYear = 2027,
+            Currency = "gbp",
+            Amount = 100,
+            Cvv = Cvv,
         });
 
         // Assert
@@ -248,7 +258,12 @@ public class ProcessPaymentServiceTests
         // Act
         await service.ProcessAsync(new ProcessPaymentCommand
         {
-            CardNumber = null, ExpiryMonth = null, ExpiryYear = null, Currency = "gbp", Amount = null, Cvv = null,
+            CardNumber = null,
+            ExpiryMonth = null,
+            ExpiryYear = null,
+            Currency = "gbp",
+            Amount = null,
+            Cvv = null,
         });
 
         // Assert
@@ -260,7 +275,12 @@ public class ProcessPaymentServiceTests
     {
         return service.ProcessAsync(new ProcessPaymentCommand
         {
-            CardNumber = CardNumber, ExpiryMonth = 4, ExpiryYear = 2027, Currency = "GBP", Amount = 100, Cvv = Cvv,
+            CardNumber = CardNumber,
+            ExpiryMonth = 4,
+            ExpiryYear = 2027,
+            Currency = "GBP",
+            Amount = 100,
+            Cvv = Cvv,
         });
     }
 
