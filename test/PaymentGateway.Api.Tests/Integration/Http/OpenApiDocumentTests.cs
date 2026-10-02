@@ -2,7 +2,7 @@ using System.Net;
 
 using PaymentGateway.Api.Tests.Integration.Fixtures;
 
-namespace PaymentGateway.Api.Tests.Integration;
+namespace PaymentGateway.Api.Tests.Integration.Http;
 
 public class OpenApiDocumentTests : IClassFixture<WireMockBankFixture>
 {

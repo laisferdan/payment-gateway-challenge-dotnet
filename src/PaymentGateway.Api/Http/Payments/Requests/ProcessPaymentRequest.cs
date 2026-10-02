@@ -1,6 +1,6 @@
 using PaymentGateway.Api.Application.ProcessPayment;
 
-namespace PaymentGateway.Api.Http.Payments;
+namespace PaymentGateway.Api.Http.Payments.Requests;
 
 /// <summary>A card payment as the merchant sends it over the wire.</summary>
 public sealed class ProcessPaymentRequest

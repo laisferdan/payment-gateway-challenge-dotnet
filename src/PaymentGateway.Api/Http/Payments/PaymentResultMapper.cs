@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using PaymentGateway.Api.Application.Ports;
 using PaymentGateway.Api.Application.ProcessPayment;
 using PaymentGateway.Api.Domain.Payments;
+using PaymentGateway.Api.Http.Payments.Responses;
 
 namespace PaymentGateway.Api.Http.Payments;
 

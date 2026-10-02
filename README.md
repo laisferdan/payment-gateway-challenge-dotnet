@@ -281,7 +281,7 @@ What this buys:
 - **An unreadable body** (malformed JSON, a value of the wrong type) is Rejected like any other invalid
   payment, with fixed messages that never echo the submitted value.
 - **Every request field is nullable**, so a missing value is Rejected instead of silently defaulting.
-- **The use case has its own input type.** The body binds to `Http/Payments/ProcessPaymentRequest` (the
+- **The use case has its own input type.** The body binds to `Http/Payments/Requests/ProcessPaymentRequest` (the
   wire contract, with Swagger docs), and its `ToCommand()` maps it to
   `Application/ProcessPayment/ProcessPaymentCommand` (raw, possibly missing values) before calling
   `ProcessPaymentService.ProcessAsync`. The shapes match today, but a rename on the wire cannot rename

@@ -12,7 +12,7 @@ using PaymentGateway.Api.Tests.Integration.Fixtures;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
-namespace PaymentGateway.Api.Tests.Integration;
+namespace PaymentGateway.Api.Tests.Integration.Http;
 
 public class ErrorFormatTests : IClassFixture<WireMockBankFixture>
 {

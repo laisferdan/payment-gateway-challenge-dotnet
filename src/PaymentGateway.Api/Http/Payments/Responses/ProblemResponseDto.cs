@@ -1,4 +1,4 @@
-namespace PaymentGateway.Api.Http.Payments;
+namespace PaymentGateway.Api.Http.Payments.Responses;
 
 // Documents the ProblemDetails body PaymentResultMapper and the framework write; never serialized itself.
 

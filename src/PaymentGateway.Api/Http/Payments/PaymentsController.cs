@@ -5,6 +5,8 @@ using Microsoft.AspNetCore.Mvc;
 using PaymentGateway.Api.Application.ProcessPayment;
 using PaymentGateway.Api.Application.RetrievePayment;
 using PaymentGateway.Api.Domain.Payments;
+using PaymentGateway.Api.Http.Payments.Requests;
+using PaymentGateway.Api.Http.Payments.Responses;
 
 namespace PaymentGateway.Api.Http.Payments;
 

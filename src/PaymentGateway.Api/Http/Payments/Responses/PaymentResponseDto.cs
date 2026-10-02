@@ -1,6 +1,6 @@
 using PaymentGateway.Api.Domain.Payments;
 
-namespace PaymentGateway.Api.Http.Payments;
+namespace PaymentGateway.Api.Http.Payments.Responses;
 
 /// <summary>A payment as merchants see it: only the last four card digits, never the CVV.</summary>
 /// <param name="Id" example="3fa85f64-5717-4562-b3fc-2c963f66afa6">The payment identifier; use it to retrieve the payment later.</param>

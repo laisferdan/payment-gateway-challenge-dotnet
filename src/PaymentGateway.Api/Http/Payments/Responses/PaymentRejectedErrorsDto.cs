@@ -1,4 +1,4 @@
-namespace PaymentGateway.Api.Http.Payments;
+namespace PaymentGateway.Api.Http.Payments.Responses;
 
 // Documents the "errors" member PaymentResultMapper.PaymentRejected writes; never serialized itself.
 
