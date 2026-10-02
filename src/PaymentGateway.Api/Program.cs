@@ -17,7 +17,7 @@ using PaymentGateway.Api.Infrastructure.Persistence;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
-builder.Logging.AddJsonConsole(options => options.IncludeScopes = true);
+builder.Logging.AddConsole();
 
 // Nothing is exported: this guarantees every request and bank call an Activity, hence a trace id
 // for logs, X-Trace-Id, error bodies and the traceparent sent to the bank (hosting logs are off).
