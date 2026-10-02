@@ -77,8 +77,10 @@ public class ProcessPaymentServiceTests
         ProcessPaymentService service = CreateService(bank, repository);
 
         // Act
-        ProcessPaymentResult result = await service.ProcessAsync(
-            cardNumber: "1234", expiryMonth: null, expiryYear: null, currency: "gbp", amount: 0, cvv: null);
+        ProcessPaymentResult result = await service.ProcessAsync(new ProcessPaymentCommand
+        {
+            CardNumber = "1234", ExpiryMonth = null, ExpiryYear = null, Currency = "gbp", Amount = 0, Cvv = null,
+        });
 
         // Assert
         IReadOnlyList<ValidationError> errors = Assert.IsType<ProcessPaymentResult.Rejected>(result).Errors;
@@ -176,8 +178,10 @@ public class ProcessPaymentServiceTests
         ProcessPaymentService service = CreateService(new FakeAcquiringBank(new BankAuthorizationResult.Authorized(AuthorizationCode)), new FakePaymentRepository(), logger);
 
         // Act
-        await service.ProcessAsync(
-            cardNumber: CardNumber + "x", expiryMonth: 4, expiryYear: 2027, currency: "gbp", amount: 100, cvv: Cvv);
+        await service.ProcessAsync(new ProcessPaymentCommand
+        {
+            CardNumber = CardNumber + "x", ExpiryMonth = 4, ExpiryYear = 2027, Currency = "gbp", Amount = 100, Cvv = Cvv,
+        });
 
         // Assert
         FakeLogRecord record = Assert.Single(logger.Collector.GetSnapshot());
@@ -242,8 +246,10 @@ public class ProcessPaymentServiceTests
             new FakeAcquiringBank(new BankAuthorizationResult.Authorized(AuthorizationCode)), new FakePaymentRepository(), meterFactory: meterFactory);
 
         // Act
-        await service.ProcessAsync(
-            cardNumber: null, expiryMonth: null, expiryYear: null, currency: "gbp", amount: null, cvv: null);
+        await service.ProcessAsync(new ProcessPaymentCommand
+        {
+            CardNumber = null, ExpiryMonth = null, ExpiryYear = null, Currency = "gbp", Amount = null, Cvv = null,
+        });
 
         // Assert
         CollectedMeasurement<long> measurement = Assert.Single(outcomes.GetMeasurementSnapshot());
@@ -252,7 +258,10 @@ public class ProcessPaymentServiceTests
 
     private static Task<ProcessPaymentResult> ProcessValidAsync(ProcessPaymentService service)
     {
-        return service.ProcessAsync(cardNumber: CardNumber, expiryMonth: 4, expiryYear: 2027, currency: "GBP", amount: 100, cvv: Cvv);
+        return service.ProcessAsync(new ProcessPaymentCommand
+        {
+            CardNumber = CardNumber, ExpiryMonth = 4, ExpiryYear = 2027, Currency = "GBP", Amount = 100, Cvv = Cvv,
+        });
     }
 
     private static MetricCollector<long> OutcomesCollector(IMeterFactory meterFactory)

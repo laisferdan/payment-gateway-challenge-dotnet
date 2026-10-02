@@ -1,3 +1,5 @@
+using PaymentGateway.Api.Application.ProcessPayment;
+
 namespace PaymentGateway.Api.Http.Payments;
 
 /// <summary>A card payment as the merchant sends it over the wire.</summary>
@@ -26,4 +28,17 @@ public sealed class ProcessPaymentRequest
     /// <summary>Required. 3 or 4 digits (0-9).</summary>
     /// <example>123</example>
     public string? Cvv { get; init; }
+
+    public ProcessPaymentCommand ToCommand()
+    {
+        return new ProcessPaymentCommand
+        {
+            CardNumber = CardNumber,
+            ExpiryMonth = ExpiryMonth,
+            ExpiryYear = ExpiryYear,
+            Currency = Currency,
+            Amount = Amount,
+            Cvv = Cvv,
+        };
+    }
 }

@@ -176,7 +176,7 @@ flowchart LR
 
     subgraph Core["Core – the hexagon"]
         direction TB
-        UseCases["<b>Application/</b><br/>use cases<br/><br/>ProcessPaymentService<br/>RetrievePaymentService"]
+        UseCases["<b>Application/</b><br/>use cases<br/><br/>ProcessPaymentService · ProcessPaymentCommand<br/>RetrievePaymentService"]
         Domain["<b>Domain/</b><br/>entities and rules<br/><br/>PaymentRequest (validation)<br/>Payment · CardDataMask"]
         BankPort{{"<b>IAcquiringBank</b><br/>driven port"}}
         RepoPort{{"<b>IPaymentRepository</b><br/>driven port"}}
@@ -230,8 +230,8 @@ What this buys:
 - **Each wire format stays in its adapter.** The merchant's JSON contract lives only in `Http/`
   (`ProcessPaymentRequest`, `PaymentResponseDto`); the bank's snake_case contract lives only in
   `Infrastructure/` (`BankPaymentRequest`, `BankPaymentResponse`). The core speaks its own types
-  (`PaymentRequest`, `Payment`, `BankAuthorizationResult`), so a rename on either wire cannot leak
-  into the other.
+  (`ProcessPaymentCommand`, `PaymentRequest`, `Payment`, `BankAuthorizationResult`), so a rename on
+  either wire cannot leak into the other.
 - **Interfaces only where the core needs the outside world.** The two driven ports are named after
   the capability, not the technology. Use cases are concrete classes: the driving adapter calls
   them directly, since nothing else would implement them.
@@ -281,11 +281,15 @@ What this buys:
 - **An unreadable body** (malformed JSON, a value of the wrong type) is Rejected like any other invalid
   payment, with fixed messages that never echo the submitted value.
 - **Every request field is nullable**, so a missing value is Rejected instead of silently defaulting.
-- **No separate use-case input type.** The body binds to `Http/Payments/ProcessPaymentRequest` (the wire
-  contract, with Swagger docs), and the controller passes its fields straight to
-  `ProcessPaymentService.ProcessAsync`. A use case with one caller doesn't need a second copy of the
-  same six fields. `PaymentResultMapper` converts error field names to camelCase when building the
-  response, keeping wire-format concerns out of the domain.
+- **The use case has its own input type.** The body binds to `Http/Payments/ProcessPaymentRequest` (the
+  wire contract, with Swagger docs), and its `ToCommand()` maps it to
+  `Application/ProcessPayment/ProcessPaymentCommand` (raw, possibly missing values) before calling
+  `ProcessPaymentService.ProcessAsync`. The shapes match today, but a rename on the wire cannot rename
+  the use case's input, and fields are assigned by name, so two `int?` or `string?` values cannot be
+  swapped by position. The command is a class, not a record, so its `ToString()` can mask the card
+  number and omit the CVV. `PaymentRequest.Create` then validates it inside the use case, against
+  the use case's clock. `PaymentResultMapper` converts error field names to camelCase when building
+  the response, keeping wire-format concerns out of the domain.
 
 ### Card data
 

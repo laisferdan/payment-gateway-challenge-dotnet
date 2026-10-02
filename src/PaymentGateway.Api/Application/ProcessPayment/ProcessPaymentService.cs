@@ -30,17 +30,16 @@ public sealed partial class ProcessPaymentService
         _logger = logger;
     }
 
-    public async Task<ProcessPaymentResult> ProcessAsync(
-        string? cardNumber, int? expiryMonth, int? expiryYear, string? currency, int? amount, string? cvv)
+    public async Task<ProcessPaymentResult> ProcessAsync(ProcessPaymentCommand command)
     {
         DateOnly today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
         CreatePaymentRequestResult validation = PaymentRequest.Create(
-            cardNumber: cardNumber,
-            expiryMonth: expiryMonth,
-            expiryYear: expiryYear,
-            currency: currency,
-            amount: amount,
-            cvv: cvv,
+            cardNumber: command.CardNumber,
+            expiryMonth: command.ExpiryMonth,
+            expiryYear: command.ExpiryYear,
+            currency: command.Currency,
+            amount: command.Amount,
+            cvv: command.Cvv,
             today: today);
 
         ProcessPaymentResult result = validation switch

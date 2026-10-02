@@ -60,8 +60,7 @@ public sealed class PaymentsController : ControllerBase
     [ProducesResponseType(typeof(ProblemResponseDto), StatusCodes.Status500InternalServerError, PaymentResultMapper.ProblemJson)]
     public async Task<IActionResult> ProcessPaymentAsync(ProcessPaymentRequest request)
     {
-        ProcessPaymentResult result = await _processPaymentService.ProcessAsync(
-            request.CardNumber, request.ExpiryMonth, request.ExpiryYear, request.Currency, request.Amount, request.Cvv);
+        ProcessPaymentResult result = await _processPaymentService.ProcessAsync(request.ToCommand());
         return _mapper.ToProcessResponse(result, HttpContext);
     }
 
